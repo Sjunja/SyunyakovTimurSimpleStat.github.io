@@ -1,0 +1,11 @@
+{
+  "name": "statix",
+  "version": "1.0.0",
+  "description": "Statistical analysis tool",
+  "dependencies": {
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-plotly.js": "^2.6.0",
+    "plotly.js": "^2.18.0"
+  }
+} 

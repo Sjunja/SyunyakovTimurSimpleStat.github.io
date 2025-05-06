@@ -1,0 +1,3281 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{t('appTitle')}</title>
+  
+  <!-- Подключение стилей Tailwind CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+  <!-- Подключение внешних стилей -->
+  <link href="./styles.css" rel="stylesheet">
+
+  <!-- Подключение i18n -->
+  <script src="./i18n.js"></script>
+  <!-- Подключение statUtils -->
+  <script src="./statUtils.js"></script>
+  <!-- Подключение effectSize -->
+  <script src="./effectSize.js"></script>
+  <!-- Подключение pairwiseTests -->
+  <script src="./pairwiseTests.js"></script>
+  <script src='https://cdn.plot.ly/plotly-2.29.1.min.js'></script>
+  <!-- Загрузка зависимостей с проверкой -->
+  <script>
+    // Функция для проверки загрузки библиотек
+    function checkDependencies() {
+      const dependencies = {
+        'React': typeof React !== 'undefined',
+        'ReactDOM': typeof ReactDOM !== 'undefined',
+        'XLSX': typeof XLSX !== 'undefined',
+        'Papa': typeof Papa !== 'undefined',
+        'lodash': typeof _ !== 'undefined',
+        'math': typeof math !== 'undefined',
+        'Babel': typeof Babel !== 'undefined'
+      };
+      
+      const missing = Object.entries(dependencies)
+        .filter(([_, loaded]) => !loaded)
+        .map(([name]) => name);
+      
+      if (missing.length > 0) {
+        console.error('Не удалось загрузить следующие библиотеки:', missing);
+        alert('Ошибка загрузки необходимых библиотек: ' + missing.join(', ') + 
+              '\nПопробуйте запустить приложение с использованием локального сервера или проверьте подключение к интернету.');
+        return false;
+      }
+      
+      return true;
+    }
+
+    // Событие для проверки всех зависимостей после полной загрузки страницы
+    window.onload = function() {
+      setTimeout(function() {
+        if (checkDependencies()) {
+          console.log('Все зависимости загружены успешно');
+          // Инициализация приложения произойдет через Babel
+        }
+      }, 1000); // Даем дополнительное время для загрузки всех ресурсов
+    };
+  </script>
+  
+  <!-- Подключение зависимостей через CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.development.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.5.0/math.min.js"></script>
+  <!-- Подключение библиотеки для корректного расчёта Shapiro-Wilk -->
+  <script src="https://cdn.jsdelivr.net/npm/simple-statistics@7.8.0/dist/simple-statistics.min.js"></script>
+  <!-- Подключение normalityTests -->
+  <script src="./normalityTests.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.18.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-box-and-violin-plot@3.0.0/build/index.umd.min.js"></script>
+  <!-- Vega, Vega-Lite, and Vega-Embed libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+  <script src="./reportGenerator.js"></script> <!-- Добавлено -->
+  <script src="./graph_component.js"></script>
+  <!-- Подключение обучающего датасета -->
+  <script src="./tutorialData.js"></script>
+
+  <!-- Инициализация GraphComponent -->
+  <script type="text/babel">
+    // Проверяем наличие GraphComponent
+    if (typeof window.GraphComponent === 'undefined') {
+      console.error('GraphComponent не загружен');
+      window.GraphComponent = function({ variable, data, groupVar }) {
+        return React.createElement("div", { className: "p-4 bg-gray-50 rounded" },
+          React.createElement("p", { className: "text-gray-600" }, "График для " + variable),
+          React.createElement("p", { className: "text-sm text-gray-500" }, "Компонент графика временно недоступен")
+        );
+      };
+    }
+  </script>
+
+  <!-- Дополнительные статистические функции -->
+  <script>
+    // Расширение math объекта дополнительными функциями
+    if (typeof math !== 'undefined') {
+      // Функция для расчета скошенности (асимметрии) распределения
+      math.skewness = function(arr) {
+        if (arr.length === 0) return 0;
+        
+        const mean = math.mean(arr);
+        const n = arr.length;
+        const std = math.std(arr);
+        
+        if (std === 0) return 0;
+        
+        let sum = 0;
+        for (let i = 0; i < n; i++) {
+          sum += Math.pow((arr[i] - mean) / std, 3);
+        }
+        
+        return n * sum / ((n - 1) * (n - 2));
+      };
+      
+      // Функция для расчета эксцесса распределения
+      math.kurtosis = function(arr) {
+        if (arr.length === 0) return 0;
+        
+        const mean = math.mean(arr);
+        const n = arr.length;
+        const std = math.std(arr);
+        
+        if (std === 0) return 0;
+        
+        let sum = 0;
+        for (let i = 0; i < n; i++) {
+          sum += Math.pow((arr[i] - mean) / std, 4);
+        }
+        
+        return (n * (n + 1) * sum) / ((n - 1) * (n - 2) * (n - 3)) - 
+               (3 * (n - 1) * (n - 1)) / ((n - 2) * (n - 3));
+      };
+      
+      // Гамма-функция (аппроксимация)
+      if (!math.gamma) {
+        math.gamma = function(z) {
+          const p = [0.99999999999980993, 676.5203681218851, -1259.1392167224028,
+                    771.32342877765313, -176.61502916214059, 12.507343278686905,
+                    -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+          
+          if (z < 0.5) {
+            return Math.PI / (Math.sin(Math.PI * z) * math.gamma(1 - z));
+          } else {
+            z -= 1;
+            let x = p[0];
+            for (let i = 1; i < p.length; i++) {
+              x += p[i] / (z + i);
+            }
+            const t = z + p.length - 1.5;
+            return Math.sqrt(2 * Math.PI) * Math.pow(t, z + 0.5) * Math.exp(-t) * x;
+          }
+        };
+        
+        // Функция неполной гамма-функции (аппроксимация)
+        math.gamma.cdf = function(x, a) {
+          // Простая аппроксимация для chi-square CDF
+          if (x <= 0) return 0;
+          
+          // Вычисление через регуляризованную неполную гамма-функцию
+          // P(a,x) = gammaRegularized(a,x)
+          // Аппроксимация для chi-square CDF
+          const epsilon = 1e-10;
+          let sum = 0;
+          let term = 1 / a;
+          let i = 1;
+          
+          while (Math.abs(term) > epsilon) {
+            sum += term;
+            term *= x / (a + i);
+            i++;
+            
+            // Защита от бесконечного цикла
+            if (i > 1000) break;
+          }
+          
+          return 1 - Math.exp(-x) * Math.pow(x, a) * sum / math.gamma(a);
+        };
+      }
+
+      // Бета-функция (для точных p-значений)
+      math.beta = function(x, y) {
+        return Math.exp(math.gammaln(x) + math.gammaln(y) - math.gammaln(x + y));
+      };
+
+      // Логарифм гамма-функции (более точный метод)
+      math.gammaln = function(z) {
+        const c = [
+          76.18009172947146,
+          -86.50532032941677,
+          24.01409824083091,
+          -1.231739572450155,
+          0.1208650973866179e-2,
+          -0.5395239384953e-5
+        ];
+        let sum = 1.000000000190015;
+        for (let i = 0; i < 6; i++) {
+          sum += c[i] / (z + i + 1);
+        }
+        const ser = sum;
+        return (Math.log(2.5066282746310005 * ser) - z) + (z - 0.5) * Math.log(z + 4.5) - (z + 4.5);
+      };
+    }
+  </script>
+</head>
+<body class="bg-gray-100">
+  <!-- Строка выбора языка -->
+  <div id="lang-bar">
+    <span>Язык / Language:</span>
+    <button id="lang-ru" onclick="window.setLang && window.setLang('ru')">RU</button>
+    <button id="lang-en" onclick="window.setLang && window.setLang('en')">EN</button>
+  </div>
+
+  <div id="debug-info" class="bg-yellow-100 p-4 border-b border-yellow-200">
+    <h3 class="font-bold">Отладочная информация:</h3>
+    <div id="debug-content"></div>
+  </div>
+
+  <div id="report-controls" class="my-4 p-3 bg-gray-100 rounded shadow-sm flex justify-end space-x-2">
+      <button id="add-all-findings-btn" class="px-3 py-1 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition duration-150 ease-in-out">
+          Добавить все находки <!-- Текст по умолчанию -->
+      </button>
+      <button id="clear-report-btn" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition duration-150 ease-in-out">
+          Очистить отчет <!-- Текст по умолчанию -->
+      </button>
+      <button id="generate-html-btn" class="px-3 py-1 bg-green-500 hover:bg-green-600 text-white text-sm rounded transition duration-150 ease-in-out">
+          Сгенерировать отчет (HTML) <!-- Текст по умолчанию -->
+      </button>
+      <button id="view-report-btn" class="px-3 py-1 bg-purple-500 hover:bg-purple-600 text-white text-sm rounded transition duration-150 ease-in-out">
+          Просмотреть отчет <!-- Новая кнопка -->
+      </button>
+      <!-- Сюда можно будет добавить кнопки для других форматов -->
+  </div>
+
+  <!-- Контейнер для просмотра отчета -->
+  <div id="report-viewer" class="hidden mt-4 p-4 bg-white rounded shadow-lg">
+      <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-semibold">Предпросмотр отчета</h2>
+          <button id="close-report-viewer" class="px-2 py-1 bg-gray-400 hover:bg-gray-500 text-white rounded">
+              Закрыть
+          </button>
+      </div>
+      <div id="report-iframe-container" class="w-full h-[600px] border border-gray-300">
+          <iframe id="report-iframe" class="w-full h-full"></iframe>
+      </div>
+  </div>
+
+  <div id="root">
+    <div class="flex justify-center items-center h-screen">
+      <div class="text-center p-8 bg-white rounded shadow-lg">
+        <h1 class="text-2xl font-bold mb-4">STSS загружается...</h1>
+        <p class="mb-4">Пожалуйста, подождите, идет инициализация приложения.</p>
+        <div class="w-full bg-gray-200 rounded-full h-2.5">
+          <div class="bg-blue-600 h-2.5 rounded-full progress-bar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Функция показа отладочной информации -->
+  <script>
+    function showDebugInfo(message) {
+      const debugInfo = document.getElementById('debug-info');
+      const debugContent = document.getElementById('debug-content');
+      debugInfo.style.display = 'block';
+      
+      if (typeof message === 'object') {
+        debugContent.innerHTML += '<pre>' + JSON.stringify(message, null, 2) + '</pre>';
+      } else {
+        debugContent.innerHTML += '<p>' + message + '</p>';
+      }
+    }
+
+    // Добавим обработку ошибок
+    window.addEventListener('error', function(event) {
+      showDebugInfo('Ошибка: ' + event.message + ' в ' + event.filename + ':' + event.lineno);
+    });
+  </script>
+
+  <!-- Скрипт приложения -->
+  <script type="text/babel">
+    // Включаем строгий режим
+    'use strict';
+
+    // Проверка готовности зависимостей перед инициализацией React
+    if (typeof React === 'undefined' || typeof ReactDOM === 'undefined') {
+      showDebugInfo('React или ReactDOM не загружены. Проверьте подключение к интернету.');
+    } else {
+      // Все необходимые функции уже реализованы в коде
+      console.log('Приложение STSS инициализировано успешно');
+
+      // Определяем calculateEffectSize для обратной совместимости
+      const calculateEffectSize = window.effectSize;
+
+      // --- Компонент для отображения таблицы результатов ---
+      function TableComponent({ results, selectedGroupVars, isSimplifiedView, showPairwiseComparisons, reportGenerator }) {
+        const [isAddingToReport, setIsAddingToReport] = React.useState(false);
+
+        // Вспомогательные функции форматирования (можно перенести из StatisticalAnalyzer или сделать общими)
+        // --- Копируем функции форматирования из StatisticalAnalyzer сюда --- 
+        // (Нужно убедиться, что они доступны или переданы как props)
+          const formatValue = (value) => {
+            if (value === undefined || value === null) return '';
+            if (typeof value === 'number') {
+              if (Math.abs(value) < 0.001 && value !== 0 || Math.abs(value) > 9999) {
+                return value.toExponential(2);
+              } else {
+                // Округляем до 3 знаков после запятой для p-value и 2 для остального
+                 const isPValueLike = String(value).length > 4 && String(value).includes('.'); // Crude check
+                 return value.toFixed(isPValueLike ? 3 : 2);
+              }
+            }
+            return value.toString();
+          };
+
+           const formatNumericResults = (result, displayParametric) => {
+              if (!result) return '-';
+              const nText = isSimplifiedView ? '' : ` (n=${result.n})`;
+              if (displayParametric) {
+                 return `${formatValue(result.mean)} ± ${formatValue(result.std)}${nText}`;
+              } else {
+                 return `${formatValue(result.median)} [${formatValue(result.q1)}; ${formatValue(result.q3)}]${nText}`;
+              }
+           };
+
+           const formatCategoricalResults = (freq, perc) => {
+               if (freq === undefined || perc === undefined) return '-';
+               return `${freq} (${perc.toFixed(isSimplifiedView ? 1 : 2)}%)`;
+           };
+
+            const formatNormalityTest = (result) => {
+                if (!result || (!result.normality && !result.groupNormalityStatus)) return '-';
+                let testInfo = result.normality;
+                let conclusion = testInfo ? t(testInfo.conclusion) : '';
+                let minPvalue = testInfo ? testInfo.pValue : Infinity;
+
+                if (result.groupNormalityStatus) {
+                    // Заменяем ?? на тернарный оператор для совместимости со старым Babel
+                    minPvalue = (result.groupNormalityStatus.minPvalue !== null && result.groupNormalityStatus.minPvalue !== undefined) ? result.groupNormalityStatus.minPvalue : minPvalue;
+                    conclusion = result.groupNormalityStatus.conclusion ? t(result.groupNormalityStatus.conclusion) : conclusion;
+                }
+
+                if (minPvalue === Infinity) return '-';
+
+                const formattedPvalue = minPvalue < 0.001 ? '< 0.001' : '= ' + minPvalue.toFixed(3);
+
+                if (isSimplifiedView) {
+                   return `p ${formattedPvalue}`;
+                }
+
+                return `p ${formattedPvalue}${conclusion ? ', ' + conclusion : ''}`;
+             };
+
+              const formatTestResult = (testResult) => {
+                  if (!testResult) return '-';
+                  const pFormatted = testResult.pValue < 0.001 ? '< 0.001' : `= ${testResult.pValue.toFixed(3)}`;
+                  let statText = '';
+                   if (testResult.type === 'ANOVA') {
+                      statText = `F(${testResult.dfb}, ${testResult.dfw}) = ${formatValue(testResult.statistic)}`;
+                   } else if (testResult.type === 'Kruskal-Wallis test') {
+                      statText = `H(${testResult.df}) = ${formatValue(testResult.statistic)}`;
+                   } else if (testResult.type === 't-test') {
+                      statText = `t(${formatValue(testResult.df)}) = ${formatValue(testResult.statistic)}`;
+                   } else if (testResult.type === 'Mann-Whitney U test') {
+                      statText = `U = ${formatValue(testResult.statistic)}, Z = ${formatValue(testResult.Z)}`;
+                   } else if (testResult.type === 'Chi-square test' || testResult.type === 'Chi-square test*') {
+                       statText = `χ²(${testResult.df}) = ${formatValue(testResult.statistic)}${testResult.type.endsWith('*') ? '*' : ''}`;
+                   } else {
+                       statText = testResult.statistic !== undefined ? `${testResult.type}: ${formatValue(testResult.statistic)}` : (testResult.type || '-');
+                   }
+                   return `${statText}, p ${pFormatted}`;
+              };
+
+              const formatEffectSize = (testResult) => {
+                   if (!testResult || !testResult.effectSize) return '-';
+                   const interpretation = testResult.effectSize.interpretation ? ` (${t(testResult.effectSize.interpretation)})` : '';
+                   if (isSimplifiedView) {
+                      return `${testResult.effectSize.type} = ${formatValue(testResult.effectSize.value)}`;
+                   }
+                   return `${testResult.effectSize.type} = ${formatValue(testResult.effectSize.value)}${interpretation}`;
+              };
+
+               const formatAlternativeEffectSize = (testResult) => {
+                   if (!testResult || !testResult.alternativeEffectSize) return '';
+                   const interpretation = testResult.alternativeEffectSize.interpretation ? ` (${t(testResult.alternativeEffectSize.interpretation)})` : '';
+                   if (isSimplifiedView) {
+                       return `, ${testResult.alternativeEffectSize.type} = ${formatValue(testResult.alternativeEffectSize.value)}`;
+                   }
+                   return `, ${testResult.alternativeEffectSize.type} = ${formatValue(testResult.alternativeEffectSize.value)}${interpretation}`;
+              };
+         // --- Конец скопированных функций ---
+
+        const handleAddTableToReport = () => {
+          if (!reportGenerator) {
+            console.error("ReportGenerator not provided to TableComponent");
+            alert(t('reportGeneratorNotLoadedError'));
+            return;
+          }
+           if (!results || results.length === 0) {
+              alert(t('reportNoTableDataError')); // "Нет данных таблицы для добавления в отчет."
+              return;
+           }
+
+          setIsAddingToReport(true);
+
+          try {
+            // 1. Подготовить данные таблицы для отчета
+            const tableDataForReport = prepareTableDataForReport();
+
+            // 2. Добавить таблицу в отчет
+            reportGenerator.addToReport({
+              type: 'table',
+              title: t('reportTableTitle') || "Таблица результатов анализа", // TODO: Добавить перевод
+              headers: tableDataForReport.headers,
+              rows: tableDataForReport.rows,
+              notes: generateTableNotes() // Добавляем примечания к таблице
+            });
+
+            alert(t('reportTableAddedSuccess')); // "Таблица добавлена в отчет."
+
+          } catch (error) {
+            console.error("Error adding table to report:", error);
+            alert(`${t('reportAddError')}: ${error.message}`);
+          } finally {
+            setIsAddingToReport(false);
+          }
+        };
+
+         // Функция для подготовки данных таблицы в формате, удобном для ReportGenerator
+         const prepareTableDataForReport = () => {
+             const headers = [];
+             const rows = [];
+
+             // Формируем заголовки
+             headers.push(t('variable'));
+             if (selectedGroupVars.length > 0) headers.push(t('category'));
+
+             const allGroups = new Set();
+             results.forEach(result => {
+                 if (result.groupStats) Object.keys(result.groupStats).forEach(g => allGroups.add(g));
+                 else if (result.groupedStats) Object.keys(result.groupedStats).forEach(g => allGroups.add(g));
+             });
+             const sortedGroups = Array.from(allGroups).sort();
+
+             if (selectedGroupVars.length > 0) {
+                 sortedGroups.forEach(group => headers.push(`${selectedGroupVars[0]}: ${group}`));
+             }
+             headers.push(t('allData').split(' (')[0]); // "Все данные" без (n=...)
+             headers.push(t('normalityTest'));
+             if (selectedGroupVars.length > 0) headers.push(t('statTest'));
+             if (selectedGroupVars.length > 0) headers.push(t('effectSize'));
+
+             // TODO: Добавить заголовки для попарных сравнений, если они включены
+             // ...
+
+             // Формируем строки
+              results.forEach(result => {
+                   if (result.error) return; // Пропускаем строки с ошибками
+
+                   if (result.type === 'numeric') {
+                       const row = [];
+                       row.push(result.variable + ` (${result.displayParametric ? t('meanSd') : t('medianQ')})`); // Добавляем тип статистики к имени переменной
+                       if (selectedGroupVars.length > 0) row.push('-'); // Пустая ячейка для категории
+
+                       if (selectedGroupVars.length > 0) {
+                          sortedGroups.forEach(group => {
+                              row.push(result.groupStats && result.groupStats[group] ? formatNumericResults(result.groupStats[group], result.displayParametric) : '-');
+                          });
+                       }
+                       row.push(formatNumericResults(result, result.displayParametric));
+                       row.push(formatNormalityTest(result));
+                       if (selectedGroupVars.length > 0) row.push(formatTestResult(result.testResult));
+                       if (selectedGroupVars.length > 0) row.push(formatEffectSize(result.testResult) + formatAlternativeEffectSize(result.testResult));
+                        // TODO: Добавить значения попарных сравнений
+                       rows.push(row);
+                   } else if (result.type === 'categorical') {
+                        result.categories.forEach((category, catIndex) => {
+                             const row = [];
+                             if (catIndex === 0) row.push(result.variable + ` (${t('nPercent')})`);
+                             else row.push(''); // Пустая ячейка для переменной в следующих строках категории
+
+                             row.push(category); // Название категории
+
+                             if (selectedGroupVars.length > 0) {
+                                 sortedGroups.forEach(group => {
+                                     row.push(result.groupedStats && result.groupedStats[group] ? formatCategoricalResults(result.groupedStats[group].frequencies[category], result.groupedStats[group].percentages[category]) : '-');
+                                 });
+                             }
+                             row.push(formatCategoricalResults(result.frequencies[category], result.percentages[category]));
+
+                             // Объединенные ячейки для тестов
+                             if (catIndex === 0) {
+                                  row.push('-'); // Нормальность
+                                  if (selectedGroupVars.length > 0) row.push(formatTestResult(result.testResult)); else if (selectedGroupVars.length > 0) row.push('');
+                                  if (selectedGroupVars.length > 0) row.push(formatEffectSize(result.testResult) + formatAlternativeEffectSize(result.testResult)); else if (selectedGroupVars.length > 0) row.push('');
+                                  // TODO: Добавить пустые ячейки для попарных сравнений
+                             } else {
+                                 row.push(''); // Нормальность
+                                 if (selectedGroupVars.length > 0) row.push(''); // Тест
+                                 if (selectedGroupVars.length > 0) row.push(''); // Эффект
+                                  // TODO: Добавить пустые ячейки для попарных сравнений
+                             }
+                             rows.push(row);
+                        });
+                   }
+              });
+
+
+             return { headers, rows };
+         };
+
+          // Функция для генерации примечаний к таблице
+          const generateTableNotes = () => {
+              // Собираем уникальные типы тестов и размеры эффектов, использованные в таблице
+              const notes = [];
+              notes.push(t('notesData')); // Общее описание формата данных
+              notes.push(t('notesNormality')); // Описание тестов нормальности
+              // ... Добавить примечания для стат. тестов, попарных сравнений, размеров эффекта ...
+              notes.push(t('notesExtra')); // Общие доп. примечания
+              return notes.join('\n'); // Возвращаем строку с примечаниями
+          };
+
+
+        // --- Рендеринг таблицы --- 
+        // (Здесь копируем логику рендеринга таблицы из StatisticalAnalyzer)
+         const tableHeaders = React.useMemo(() => {
+             const headers = [];
+             headers.push(t('variable'));
+             if (selectedGroupVars.length > 0) headers.push(t('category'));
+
+             const allGroups = new Set();
+             results.forEach(result => {
+                 if (result.groupStats) Object.keys(result.groupStats).forEach(g => allGroups.add(g));
+                 else if (result.groupedStats) Object.keys(result.groupedStats).forEach(g => allGroups.add(g));
+             });
+             const sortedGroups = Array.from(allGroups).sort();
+
+             if (selectedGroupVars.length > 0) {
+                 sortedGroups.forEach(group => {
+                     const groupSize = results.reduce((maxN, res) => {
+                         if (res.groupStats && res.groupStats[group]) return Math.max(maxN, res.groupStats[group].n);
+                         if (res.groupedStats && res.groupedStats[group]) return Math.max(maxN, res.groupedStats[group].n);
+                         return maxN;
+                     }, 0);
+                     headers.push(`${selectedGroupVars[0]}: ${group} (n=${groupSize})`);
+                 });
+             }
+
+             const maxTotalN = Math.max(...results.map(r => r.n || 0));
+             headers.push(t('allData').replace('{n}', maxTotalN));
+
+             headers.push(t('normalityTest'));
+             if (selectedGroupVars.length > 0) headers.push(t('statTest'));
+             if (selectedGroupVars.length > 0) headers.push(t('effectSize'));
+
+             if (showPairwiseComparisons && selectedGroupVars.length > 0) {
+                  const allPairs = new Set();
+                  results.forEach(result => {
+                      if (result.pairwiseComparisons) {
+                          result.pairwiseComparisons.forEach(comp => allPairs.add(`${comp.group1} vs ${comp.group2}`));
+                      }
+                  });
+                   Array.from(allPairs).sort().forEach(pair => headers.push(pair));
+             }
+
+             return headers;
+         }, [results, selectedGroupVars, isSimplifiedView, showPairwiseComparisons, window.currentLang]);
+
+         const tableRows = React.useMemo(() => {
+              return results.flatMap((result, resultIndex) => {
+                  if (result.error) {
+                       // Отображение ошибки
+                       return [{
+                           key: `error-${resultIndex}`,
+                           cells: [
+                               { content: result.variable, colSpan: tableHeaders.length, className: 'text-red-600 font-semibold' },
+                               ...Array(tableHeaders.length - 1).fill(null) // Заполнители для остальных ячеек
+                           ],
+                           error: `Ошибка анализа: ${result.error}`
+                       }];
+                  }
+                   if (result.type === 'numeric') {
+                       const displayParametric = result.displayParametric;
+                       const cells = [
+                           { content: result.variable, subHeader: displayParametric ? t('meanSd') : t('medianQ') },
+                           selectedGroupVars.length > 0 ? { content: '-' } : null, // Категория
+                       ];
+
+                        const allGroups = new Set();
+                        results.forEach(res => {
+                            if (res.groupStats) Object.keys(res.groupStats).forEach(g => allGroups.add(g));
+                        });
+                        const sortedGroups = Array.from(allGroups).sort();
+
+                       if (selectedGroupVars.length > 0) {
+                           sortedGroups.forEach(group => {
+                               cells.push({ content: result.groupStats && result.groupStats[group] ? formatNumericResults(result.groupStats[group], displayParametric) : '-' });
+                           });
+                       }
+
+                       cells.push({ content: formatNumericResults(result, displayParametric) }); // Все данные
+                       cells.push({ content: formatNormalityTest(result) }); // Нормальность
+                       if (selectedGroupVars.length > 0) cells.push({ content: formatTestResult(result.testResult) }); // Тест
+                       if (selectedGroupVars.length > 0) cells.push({ content: formatEffectSize(result.testResult) + formatAlternativeEffectSize(result.testResult) }); // Эффект
+
+                       // Попарные сравнения
+                        if (showPairwiseComparisons && selectedGroupVars.length > 0) {
+                              const allPairs = new Set();
+                              results.forEach(res => {
+                                  if (res.pairwiseComparisons) res.pairwiseComparisons.forEach(comp => allPairs.add(`${comp.group1} vs ${comp.group2}`));
+                              });
+                              const comparisonsMap = {};
+                              if (result.pairwiseComparisons) {
+                                   result.pairwiseComparisons.forEach(comp => comparisonsMap[`${comp.group1} vs ${comp.group2}`] = comp);
+                              }
+                               Array.from(allPairs).sort().forEach(pairName => {
+                                   const comp = comparisonsMap[pairName];
+                                   if (!comp) {
+                                       cells.push({ content: '-', className: 'bg-blue-50' });
+                                       return;
+                                   }
+                                   const isSignificant = comp.pValue < 0.05;
+                                   let formattedText = '';
+                                    if (isSimplifiedView) {
+                                          let significance = comp.pValue < 0.001 ? '***' : comp.pValue < 0.01 ? '**' : comp.pValue < 0.05 ? '*' : '';
+                                          formattedText = comp.pValue < 0.001 ? `p < 0.001${significance}` : `p = ${comp.pValue.toFixed(3)}${significance}`;
+                                    } else {
+                                          // Замена optional chaining (?.)
+                                          const diffValue = displayParametric ? (comp.meanDiff != null ? comp.meanDiff.toFixed(2) : '-') : (comp.meanRankDiff != null ? comp.meanRankDiff.toFixed(2) : '-');
+                                          const diffType = displayParametric ? 'Δ' : 'ΔR';
+                                          const statValue = comp.statistic != null ? comp.statistic.toFixed(2) : '-';
+                                          const methodSymbol = displayParametric ? (comp.method === 'tukey' ? 'q' : comp.method === 'scheffe' ? 'F' : 't') : (comp.method === 'dunn' ? 'z' : 't');
+                                          const pFormatted = comp.pValue < 0.001 ? 'p < .001' : `p = ${comp.pValue.toFixed(3)}`.replace('0.', '.');
+                                          formattedText = `${diffType}=${diffValue}, SE=${(comp.se != null ? comp.se.toFixed(2) : '-')}, ${methodSymbol}=${statValue}, ${pFormatted}`;
+                                    }
+                                   cells.push({ content: formattedText, className: `${isSignificant ? 'font-medium text-red-600' : ''} bg-blue-50` });
+                               });
+                        }
+
+
+                       return [{ key: `num-${resultIndex}`, cells: cells.filter(c => c !== null) }]; // Отфильтровываем null для случая без групп
+                   } else if (result.type === 'categorical') {
+                       const numCategories = result.categories.length;
+                       return result.categories.map((category, catIndex) => {
+                           const cells = [];
+                           if (catIndex === 0) cells.push({ content: result.variable, subHeader: t('nPercent'), rowSpan: numCategories });
+                           cells.push({ content: category }); // Категория
+
+                           const allGroups = new Set();
+                           results.forEach(res => {
+                               if (res.groupedStats) Object.keys(res.groupedStats).forEach(g => allGroups.add(g));
+                           });
+                           const sortedGroups = Array.from(allGroups).sort();
+
+
+                           if (selectedGroupVars.length > 0) {
+                                sortedGroups.forEach(group => {
+                                    cells.push({ content: result.groupedStats && result.groupedStats[group] ? formatCategoricalResults(result.groupedStats[group].frequencies[category], result.groupedStats[group].percentages[category]) : '-' });
+                                });
+                           }
+
+                           cells.push({ content: formatCategoricalResults(result.frequencies[category], result.percentages[category]) }); // Все данные
+
+                           // Объединенные ячейки
+                           if (catIndex === 0) {
+                               cells.push({ content: '-', rowSpan: numCategories }); // Нормальность
+                               if (selectedGroupVars.length > 0) cells.push({ content: formatTestResult(result.testResult), rowSpan: numCategories }); // Тест
+                               else if (selectedGroupVars.length > 0) cells.push({ content: '', rowSpan: numCategories });
+                               if (selectedGroupVars.length > 0) cells.push({ content: formatEffectSize(result.testResult) + formatAlternativeEffectSize(result.testResult), rowSpan: numCategories }); // Эффект
+                                else if (selectedGroupVars.length > 0) cells.push({ content: '', rowSpan: numCategories });
+
+                                 // Попарные сравнения (пустые)
+                                 if (showPairwiseComparisons && selectedGroupVars.length > 0) {
+                                      const allPairs = new Set();
+                                      results.forEach(res => {
+                                           if (res.pairwiseComparisons) res.pairwiseComparisons.forEach(comp => allPairs.add(`${comp.group1} vs ${comp.group2}`));
+                                      });
+                                      Array.from(allPairs).sort().forEach(() => {
+                                           cells.push({ content: '-', rowSpan: numCategories, className: 'bg-blue-50' });
+                                      });
+                                 }
+                           }
+
+                           return { key: `cat-${resultIndex}-${catIndex}`, cells: cells.filter(c => c !== null) };
+                       });
+                   }
+                   return []; // Возвращаем пустой массив, если тип не распознан
+              });
+         }, [results, selectedGroupVars, isSimplifiedView, showPairwiseComparisons, window.currentLang]);
+
+
+        return React.createElement("div", { className: "overflow-x-auto" },
+          React.createElement("table", { className: "min-w-full border-collapse text-sm mb-4" },
+             React.createElement("thead", null,
+                 React.createElement("tr", { className: "bg-gray-200" },
+                     tableHeaders.map((header, index) =>
+                         React.createElement("th", { key: index, className: "border border-gray-300 p-1 text-left" }, header)
+                     )
+                 )
+             ),
+             React.createElement("tbody", null,
+                  tableRows.map((row, rowIndex) =>
+                       React.createElement("tr", { key: row.key, className: rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white', title: row.error },
+                           row.cells.map((cell, cellIndex) => (
+                                cell ? // Проверяем, что ячейка не null (для rowSpan)
+                                React.createElement("td", {
+                                    key: cellIndex,
+                                    className: `border border-gray-300 p-1 ${cell.className || ''}`,
+                                    rowSpan: cell.rowSpan || 1,
+                                    colSpan: cell.colSpan || 1
+                                 },
+                                 cell.content,
+                                 cell.subHeader && React.createElement("div", {className: "text-xs text-gray-500"}, cell.subHeader)
+                                ) : null
+                           ))
+                       )
+                  )
+             )
+          ),
+          // Кнопка добавления таблицы в отчет
+          reportGenerator && React.createElement("div", { className: "mt-4 flex justify-end" },
+            React.createElement("button", {
+              onClick: handleAddTableToReport,
+              disabled: isAddingToReport,
+              className: `px-4 py-2 rounded ${isAddingToReport ? 'bg-gray-400' : 'bg-emerald-500 hover:bg-emerald-600'} text-white text-sm transition duration-150 ease-in-out`
+            },
+              isAddingToReport ? t('reportAddingButton') : t('reportAddTableButton') // "Добавить таблицу в отчет" - TODO: добавить перевод
+            )
+          )
+        );
+      }
+
+      // Главный компонент приложения
+      function StatisticalAnalyzer() {
+        // State для управления данными и пользовательским интерфейсом
+        const [file, setFile] = React.useState(null);
+        const [sheets, setSheets] = React.useState([]);
+        const [selectedSheet, setSelectedSheet] = React.useState('');
+        const [parsedData, setParsedData] = React.useState([]);
+        const [headers, setHeaders] = React.useState([]);
+        const [variableTypes, setVariableTypes] = React.useState({});
+        const [selectedAnalysisVars, setSelectedAnalysisVars] = React.useState([]);
+        const [selectedGroupVars, setSelectedGroupVars] = React.useState([]);
+        const [missingValuesThreshold, setMissingValuesThreshold] = React.useState(30);
+        const [variableInfo, setVariableInfo] = React.useState({});
+        const [analysisMethod, setAnalysisMethod] = React.useState('auto');
+        const [useMonteCarloMethod, setUseMonteCarloMethod] = React.useState(false);
+        const [monteCarloIterations, setMonteCarloIterations] = React.useState(10000);
+        const [results, setResults] = React.useState(null);
+        const [isAnalyzing, setIsAnalyzing] = React.useState(false);
+        const [previewWidth, setPreviewWidth] = React.useState(400);
+        // Добавим состояние для упрощенного вида
+        const [isSimplifiedView, setIsSimplifiedView] = React.useState(false);
+        // Добавляем состояния для фильтрации
+        const [filters, setFilters] = React.useState({});
+        const [filteredData, setFilteredData] = React.useState([]);
+        const [showFilters, setShowFilters] = React.useState(false);
+        const [selectedVariables, setSelectedVariables] = React.useState([]);
+        const [showGraphs, setShowGraphs] = React.useState(false);
+        // Добавляем состояния для попарных сравнений
+        const [showPairwiseComparisons, setShowPairwiseComparisons] = React.useState(false);
+        const [pairwiseComparisonMethod, setPairwiseComparisonMethod] = React.useState({
+          parametric: 'tukey', // 'tukey', 'scheffe', 'lsd', 'dunnett'
+          nonParametric: 'dunn'  // 'dunn', 'steel-dwass'
+        });
+        
+        // Делаем метод сравнения доступным глобально для модуля pairwiseTests
+        React.useEffect(() => {
+          window.pairwiseComparisonMethod = pairwiseComparisonMethod;
+        }, [pairwiseComparisonMethod]);
+        
+        const fileInputRef = React.useRef(null);
+        
+        // При инициализации компонента
+        React.useEffect(() => {
+          console.log("Приложение STATIX инициализировано");
+          // Здесь можно добавить дополнительную инициализацию
+        }, []);
+        
+        // Обработка загрузки файла
+        const handleFileUpload = (event) => {
+          try {
+            const uploadedFile = event.target.files[0];
+            if (uploadedFile) {
+              setFile(uploadedFile);
+              const reader = new FileReader();
+              
+              reader.onload = (e) => {
+                try {
+                  const data = new Uint8Array(e.target.result);
+                  const workbook = XLSX.read(data, { 
+                    type: 'array',
+                    cellDates: true,
+                    cellNF: true
+                  });
+                  setSheets(workbook.SheetNames);
+                  
+                  if (workbook.SheetNames.length > 0) {
+                    setSelectedSheet(workbook.SheetNames[0]);
+                    loadSheetData(workbook, workbook.SheetNames[0]);
+                  }
+                } catch (error) {
+                  console.error("Error reading file:", error);
+                  alert("Ошибка при чтении файла. Проверьте формат файла.");
+                }
+              };
+              
+              reader.readAsArrayBuffer(uploadedFile);
+            }
+          } catch (error) {
+            console.error("Error handling file upload:", error);
+            alert("Ошибка при загрузке файла: " + error.message);
+          }
+        };
+        
+        // Загрузка данных из выбранного листа
+        const loadSheetData = (workbook, sheetName) => {
+          try {
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            if (jsonData.length > 0) {
+              const headerRow = jsonData[0];
+              const dataRows = jsonData.slice(1).filter(row => row.length > 0);
+              
+              setHeaders(headerRow);
+              setParsedData(dataRows);
+              
+              // Анализ типов переменных и статистики
+              analyzeVariables(headerRow, dataRows);
+            } else {
+              setHeaders([]);
+              setParsedData([]);
+              setVariableInfo({});
+            }
+          } catch (error) {
+            console.error("Error loading sheet data:", error);
+            alert("Ошибка при загрузке данных из листа: " + error.message);
+          }
+        };
+        
+        // Анализ типов переменных и их характеристик
+        const analyzeVariables = (headers, data) => {
+          try {
+            const varInfo = {};
+            const varTypes = {};
+            
+            headers.forEach((header, index) => {
+              if (!header) return; // Пропуск пустых заголовков
+              
+              const values = data.map(row => row[index]).filter(val => val !== undefined && val !== null && val !== '');
+              const uniqueValues = [...new Set(values)];
+              const missingCount = data.length - values.length;
+              const missingPercentage = (missingCount / data.length) * 100;
+              const idness = uniqueValues.length / values.length;
+              
+              // Если только одно уникальное значение, пропускаем переменную
+              if (uniqueValues.length <= 1) {
+                varTypes[header] = 'skip';
+                varInfo[header] = {
+                  uniqueCount: uniqueValues.length,
+                  totalCount: values.length,
+                  missingCount,
+                  missingPercentage,
+                  idness,
+                  uniqueValues,
+                  type: 'skip'
+                };
+                return;
+              }
+              
+              // Определение типа переменной
+              let variableType = 'unknown';
+              
+              // Проверка на числовой тип
+              const numericValues = values.filter(val => 
+                (typeof val === 'number' || !isNaN(Number(val))) && 
+                String(val).trim() !== ''
+              );
+              
+              if (numericValues.length / values.length > 0.8) {
+                // Если это числовые значения, проверяем количество уникальных значений
+                const uniqueNumericValues = [...new Set(numericValues.map(v => Number(v)))];
+                if (uniqueNumericValues.length <= 3) {
+                  // Если 2 или 3 уникальных значения, считаем переменную категориальной
+                  variableType = 'categorical';
+                } else {
+                  variableType = 'numeric';
+                }
+              } 
+              // Проверка на категориальную переменную
+              else if (uniqueValues.length <= Math.min(20, data.length * 0.2)) {
+                variableType = 'categorical';
+              }
+              // Проверка на ID
+              else if (idness > 0.8) {
+                variableType = 'id';
+              }
+              
+              varInfo[header] = {
+                uniqueCount: uniqueValues.length,
+                totalCount: values.length,
+                missingCount,
+                missingPercentage,
+                idness,
+                uniqueValues: uniqueValues.length <= 20 ? uniqueValues : [],
+                type: variableType
+              };
+              
+              varTypes[header] = variableType;
+            });
+            
+            setVariableInfo(varInfo);
+            setVariableTypes(varTypes);
+          } catch (error) {
+            console.error("Error analyzing variables:", error);
+            alert("Ошибка при анализе переменных: " + error.message);
+          }
+        };
+        
+        // Обработчик выбора листа
+        const handleSheetChange = (e) => {
+          try {
+            const selectedSheetName = e.target.value;
+            setSelectedSheet(selectedSheetName);
+            
+            if (file) {
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+                loadSheetData(workbook, selectedSheetName);
+              };
+              reader.readAsArrayBuffer(file);
+            }
+          } catch (error) {
+            console.error("Error changing sheet:", error);
+            alert("Ошибка при смене листа: " + error.message);
+          }
+        };
+        
+        // Изменение типа переменной вручную
+        const handleVariableTypeChange = (variable, newType) => {
+          setVariableTypes(prev => ({
+            ...prev,
+            [variable]: newType
+          }));
+          
+          setVariableInfo(prev => ({
+            ...prev,
+            [variable]: {
+              ...prev[variable],
+              type: newType
+            }
+          }));
+        };
+        
+        // Выбор всех переменных определенного типа
+        const selectAllVariablesOfType = (type) => {
+          try {
+            const varsOfType = Object.keys(variableTypes).filter(
+              v => variableTypes[v] === type && 
+              variableInfo[v].missingPercentage <= missingValuesThreshold
+            );
+            setSelectedAnalysisVars(varsOfType);
+          } catch (error) {
+            console.error("Error selecting variables:", error);
+            alert("Ошибка при выборе переменных: " + error.message);
+          }
+        };
+        
+        // Функция применения фильтров
+        const applyFilters = React.useCallback(() => {
+          let filtered = parsedData;
+          
+          Object.entries(filters).forEach(([column, filter]) => {
+            const columnIndex = headers.indexOf(column);
+            if (columnIndex === -1) return;
+            
+            if (filter && filter.trim()) {
+              filtered = filtered.filter(row => {
+                const value = String(row[columnIndex] || '').toLowerCase();
+                const filterValue = filter.toLowerCase();
+                
+                // Поддержка операторов сравнения
+                if (filterValue.startsWith('>=')) {
+                  return Number(value) >= Number(filterValue.slice(2));
+                } else if (filterValue.startsWith('<=')) {
+                  return Number(value) <= Number(filterValue.slice(2));
+                } else if (filterValue.startsWith('>')) {
+                  return Number(value) > Number(filterValue.slice(1));
+                } else if (filterValue.startsWith('<')) {
+                  return Number(value) < Number(filterValue.slice(1));
+                } else if (filterValue.startsWith('=')) {
+                  return value === filterValue.slice(1);
+                } else if (filterValue.includes('|')) {
+                  // Поддержка множественных значений через |
+                  const values = filterValue.split('|').map(v => v.trim());
+                  return values.some(v => value.includes(v));
+                } else {
+                  return value.includes(filterValue);
+                }
+              });
+            }
+          });
+          
+          setFilteredData(filtered);
+        }, [parsedData, filters, headers]);
+
+        // Обновляем useEffect для загрузки данных
+        React.useEffect(() => {
+          if (parsedData.length > 0) {
+            setFilteredData(parsedData);
+          }
+        }, [parsedData]);
+        
+        // Запуск статистического анализа
+        const runAnalysis = () => {
+          if (selectedAnalysisVars.length === 0) {
+            alert("Пожалуйста, выберите переменные для анализа.");
+            return;
+          }
+          
+          setIsAnalyzing(true);
+          
+          try {
+            // Устанавливаем глобальные настройки Монте-Карло для statUtils
+            window.statUtils.useMonteCarloMethod = useMonteCarloMethod;
+            window.statUtils.monteCarloIterations = monteCarloIterations;
+            
+            // Используем отфильтрованные данные вместо parsedData
+            const dataForAnalysis = filteredData.map(row => {
+              const rowObj = {};
+              headers.forEach((header, idx) => {
+                if (header) {
+                  rowObj[header] = row[idx];
+                }
+              });
+              return rowObj;
+            });
+            
+            // Результаты анализа
+            const analysisResults = [];
+            
+            // Для каждой выбранной переменной
+            for (const variable of selectedAnalysisVars) {
+              const variableType = variableTypes[variable];
+              
+              if (variableType === 'numeric') {
+                // Анализ для числовой переменной
+                analysisResults.push(analyzeNumericVariable(variable, dataForAnalysis));
+              } else if (variableType === 'categorical') {
+                // Анализ для категориальной переменной
+                analysisResults.push(analyzeCategoricalVariable(variable, dataForAnalysis));
+              }
+            }
+            
+            setResults(analysisResults);
+          } catch (error) {
+            console.error("Error during analysis:", error);
+            alert("Произошла ошибка при анализе данных: " + error.message);
+          } finally {
+            setIsAnalyzing(false);
+          }
+        };
+        
+        // Модифицируем функцию analyzeNumericVariable для добавления попарных сравнений
+        const analyzeNumericVariable = (variable, data) => {
+          try {
+            // Извлечение данных переменной
+            const values = data.map(row => {
+              const val = row[variable];
+              return typeof val === 'number' ? val : Number(val);
+            }).filter(val => !isNaN(val));
+
+            // Базовая статистика (используем наши собственные функции если math.js недоступен)
+            let mean, median, std, q1, q3, skewness, kurtosis;
+            try {
+              mean = math.mean(values);
+              median = math.median(values);
+              std = math.std(values);
+              q1 = math.quantileSeq(values, 0.25);
+              q3 = math.quantileSeq(values, 0.75);
+              skewness = typeof math.skewness === 'function' ? math.skewness(values) : statUtils.skewness(values);
+              kurtosis = typeof math.kurtosis === 'function' ? math.kurtosis(values) : statUtils.kurtosis(values);
+            } catch (e) {
+              mean = statUtils.mean(values);
+              median = statUtils.median(values);
+              std = statUtils.std(values);
+              q1 = statUtils.quantile(values, 0.25);
+              q3 = statUtils.quantile(values, 0.75);
+              skewness = statUtils.skewness(values);
+              kurtosis = statUtils.kurtosis(values);
+            }
+
+            // Новый механизм: строгий тест нормальности для общей выборки
+            const normalityResult = normalityTests.normalityTest(values);
+            const isNormal = normalityResult.isNormal;
+
+            // Анализ по группам, если выбрана группирующая переменная
+            const groupStats = {};
+            let allGroupsAreNormal = true; // Флаг для отслеживания нормальности всех групп
+            const groupNormalityResults = {};
+            let testResult = null;
+            let pairwiseComparisons = null;
+            let groupNormalityStatus = null;
+            let displayParametric = isNormal;
+
+            if (selectedGroupVars.length > 0) {
+              const groupVar = selectedGroupVars[0];
+              
+              // Получаем уникальные значения группирующей переменной
+              const uniqueGroups = [...new Set(data.map(row => row[groupVar]))].filter(val => 
+                val !== undefined && val !== null && val !== ''
+              ).sort();
+              
+              // Создаем массивы значений для каждой группы
+              const groupArrays = [];
+              const groupValues = {};
+              
+              // Для каждой группы рассчитываем статистику
+              uniqueGroups.forEach(groupName => {
+                const groupData = data.filter(row => row[groupVar] === groupName);
+                const values = groupData
+                  .map(row => {
+                    const val = row[variable];
+                    return typeof val === 'number' ? val : Number(val);
+                  })
+                  .filter(val => !isNaN(val));
+                
+                if (values.length > 0) {
+                  let gMean, gMedian, gStd, gQ1, gQ3, gSkewness, gKurtosis;
+                  try {
+                    gMean = math.mean(values);
+                    gMedian = math.median(values);
+                    gStd = math.std(values);
+                    gQ1 = math.quantileSeq(values, 0.25);
+                    gQ3 = math.quantileSeq(values, 0.75);
+                    gSkewness = math.skewness ? math.skewness(values) : statUtils.skewness(values);
+                    gKurtosis = math.kurtosis ? math.kurtosis(values) : statUtils.kurtosis(values);
+                  } catch (e) {
+                    gMean = statUtils.mean(values);
+                    gMedian = statUtils.median(values);
+                    gStd = statUtils.std(values);
+                    gQ1 = statUtils.quantile(values, 0.25);
+                    gQ3 = statUtils.quantile(values, 0.75);
+                    gSkewness = statUtils.skewness(values);
+                    gKurtosis = statUtils.kurtosis(values);
+                  }
+                  // Строгий тест нормальности для группы
+                  const gNormality = normalityTests.normalityTest(values);
+                  groupNormalityResults[groupName] = gNormality;
+                  if (!gNormality.isNormal) {
+                    allGroupsAreNormal = false; // Если хотя бы одна группа не нормальна, ставим флаг в false
+                  }
+                  groupStats[groupName] = {
+                    n: values.length,
+                    mean: gMean,
+                    median: gMedian,
+                    std: gStd,
+                    q1: gQ1,
+                    q3: gQ3,
+                    isNormal: gNormality.isNormal,
+                    normalityResult: gNormality,
+                    values: values.length > 10000 ? values.slice(0, 10000) : values // ← добавляем сырые данные с ограничением по размеру
+                  };
+                  
+                  // Сохраняем массивы значений для вычисления попарных сравнений
+                  groupArrays.push(values);
+                  groupValues[groupName] = values;
+                }
+              });
+              
+              // Получаем общий статус нормальности для всех групп
+              groupNormalityStatus = normalityTests.getGroupNormalityStatus(groupNormalityResults);
+              
+              // Определяем, какой формат вывода использовать (параметрический или нет)
+              if (analysisMethod === 'parametric') {
+                displayParametric = true;
+              } else if (analysisMethod === 'nonparametric') {
+                displayParametric = false;
+              } else { // auto
+                // В автоматическом режиме используем параметрические статистики, 
+                // если p-значение теста нормальности > 0.05
+                displayParametric = (
+                  (isNormal && (!groupNormalityStatus || groupNormalityStatus.isNormal)) ||
+                  (normalityResult && normalityResult.pValue > 0.05) ||
+                  (groupNormalityStatus && groupNormalityStatus.minPvalue > 0.05)
+                );
+              }
+              
+              // Вычисляем попарные сравнения, если у нас 3 или более групп
+              if (uniqueGroups.length >= 3) {
+                if (displayParametric) {
+                  // Параметрические попарные сравнения для ANOVA
+                  pairwiseComparisons = window.pairwiseTests.computeParametric(
+                    variable, 
+                    groupValues, 
+                    groupArrays, 
+                    uniqueGroups
+                  );
+                } else {
+                  // Непараметрические попарные сравнения для Kruskal-Wallis
+                  pairwiseComparisons = window.pairwiseTests.computeNonParametric(
+                    variable, 
+                    groupValues, 
+                    groupArrays, 
+                    uniqueGroups
+                  );
+                }
+              }
+              
+              // Выбор и выполнение статистического теста
+              const groupNames = uniqueGroups;
+              
+              if (groupNames.length >= 2) {
+                console.log(`Выбор теста для ${variable}, метод: ${analysisMethod}, групп: ${groupNames.length}`);
+                
+                if (groupArrays.some(group => group.length < 2)) {
+                  testResult = {
+                    type: 'Error',
+                    formattedResult: 'Недостаточно данных в одной или нескольких группах (n < 2)'
+                  };
+                } else {
+                  // Выбор теста в зависимости от количества групп и analysisMethod
+                  if (groupNames.length === 2) {
+                    // Проверяем нормальность в обеих группах
+                    const group1Values = groupArrays[0];
+                    const group2Values = groupArrays[1];
+                    
+                    const normality1 = normalityTests.normalityTest(group1Values);
+                    const normality2 = normalityTests.normalityTest(group2Values);
+                    
+                    // Создаем объект результатов нормальности для групп
+                    const twoGroupNormalityResults = {
+                      'group1': normality1,
+                      'group2': normality2
+                    };
+                    
+                    // Получаем минимальное p-значение для обеих групп
+                    const twoGroupNormalityStatus = normalityTests.getGroupNormalityStatus(twoGroupNormalityResults);
+                    
+                    // Определяем, какой тест использовать
+                    const useParametric = analysisMethod === 'parametric' || 
+                      (analysisMethod === 'auto' && twoGroupNormalityStatus.isNormal);
+                    
+                    if (useParametric) {
+                      // Выполнение t-теста
+                      const n1 = group1Values.length;
+                      const n2 = group2Values.length;
+                      
+                      let mean1, mean2, var1, var2;
+                      try {
+                        mean1 = math.mean(group1Values);
+                        mean2 = math.mean(group2Values);
+                        var1 = math.variance(group1Values);
+                        var2 = math.variance(group2Values);
+                      } catch (e) {
+                        mean1 = statUtils.mean(group1Values);
+                        mean2 = statUtils.mean(group2Values);
+                        var1 = statUtils.variance(group1Values);
+                        var2 = statUtils.variance(group2Values);
+                      }
+                      
+                      // Объединенная дисперсия
+                      const pooledVar = ((n1 - 1) * var1 + (n2 - 1) * var2) / (n1 + n2 - 2);
+                      const pooledStd = Math.sqrt(pooledVar);
+                      
+                      // t-статистика
+                      const t = (mean1 - mean2) / (pooledStd * Math.sqrt(1/n1 + 1/n2));
+                      const df = n1 + n2 - 2;
+                      
+                      // p-значение
+                      let pValue;
+                      try {
+                        pValue = 2 * (1 - statUtils.tcdf(Math.abs(t), df));
+                      } catch (e) {
+                        pValue = 2 * (1 - statUtils.erf(Math.abs(t) / Math.sqrt(2)));
+                      }
+                      
+                      // Добавляем расчет размера эффекта (Cohen's d)
+                      const effectSize = window.effectSize.cohensD(group1Values, group2Values);
+                      
+                      testResult = {
+                        type: 't-test',
+                        statistic: t,
+                        df: df,
+                        pValue: pValue,
+                        normality: {
+                          group1: normality1,
+                          group2: normality2
+                        },
+                        formattedResult: `t(${df.toFixed(2)}) = ${t.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)}`,
+                        effectSize: {
+                          type: "Cohen's d",
+                          value: effectSize,
+                          interpretation: window.effectSize.interpretCohensD(effectSize)
+                        }
+                      };
+
+                      // Также создаем попарное сравнение для случая двух групп
+                      if (!pairwiseComparisons) {
+                        pairwiseComparisons = [{
+                          group1: groupNames[0],
+                          group2: groupNames[1],
+                          meanDiff: Math.abs(mean1 - mean2),
+                          se: pooledStd * Math.sqrt(1/n1 + 1/n2),
+                          statistic: t,
+                          method: 't-test',
+                          pValue: pValue
+                        }];
+                      }
+                    } else {
+                      // Выполнение U-теста Манна-Уитни
+                      const allValues = [...group1Values, ...group2Values];
+                      
+                      let ranks;
+                      try {
+                        ranks = statUtils.calculateRanks(allValues);
+                      } catch (e) {
+                        console.error("Error calculating ranks:", e);
+                        ranks = [];
+                      }
+                      
+                      // Сумма рангов для первой группы
+                      let rankSum1 = 0;
+                      for (let i = 0; i < group1Values.length; i++) {
+                        const value = group1Values[i];
+                        const index = allValues.indexOf(value);
+                        rankSum1 += ranks[index];
+                      }
+                      
+                      const n1 = group1Values.length;
+                      const n2 = group2Values.length;
+                      
+                      // U-статистика
+                      const U1 = rankSum1 - (n1 * (n1 + 1)) / 2;
+                      const U2 = n1 * n2 - U1;
+                      const U = Math.min(U1, U2);
+                      
+                      // Среднее и стандартное отклонение U при нулевой гипотезе
+                      const meanU = n1 * n2 / 2;
+                      const stdU = Math.sqrt((n1 * n2 * (n1 + n2 + 1)) / 12);
+                      
+                      // Z-статистика
+                      const Z = (U - meanU) / stdU;
+                      
+                      // p-значение
+                      let pValue;
+                      try {
+                        pValue = 2 * (1 - statUtils.normcdf(Math.abs(Z)));
+                      } catch (e) {
+                        pValue = 2 * (1 - statUtils.erf(Math.abs(Z) / Math.sqrt(2)));
+                      }
+                      
+                      // Добавляем расчет размера эффекта (rank-biserial correlation)
+                      const effectSize = window.effectSize.rankBiserial(U, n1, n2);
+                      
+                      testResult = {
+                        type: 'Mann-Whitney U test',
+                        statistic: U,
+                        Z: Z,
+                        pValue: pValue,
+                        normality: {
+                          group1: normality1,
+                          group2: normality2
+                        },
+                        formattedResult: `U = ${U.toFixed(2)}, Z = ${Z.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)}`,
+                        effectSize: {
+                          type: 'rank-biserial r',
+                          value: effectSize,
+                          interpretation: window.effectSize.interpretRankBiserial(effectSize)
+                        }
+                      };
+
+                      // Рассчитываем средние ранги для групп 
+                      const rankSum2 = ranks.reduce((a, b) => a + b, 0) - rankSum1;
+                      const meanRank1 = rankSum1 / n1;
+                      const meanRank2 = rankSum2 / n2;
+
+                      // Добавляем попарное сравнение для случая двух групп с непараметрическим тестом
+                      if (!pairwiseComparisons) {
+                        pairwiseComparisons = [{
+                          group1: groupNames[0],
+                          group2: groupNames[1],
+                          meanRankDiff: Math.abs(meanRank1 - meanRank2),
+                          se: stdU,
+                          statistic: Z,
+                          method: 'Mann-Whitney',
+                          pValue: pValue
+                        }];
+                      }
+                    }
+                  } else {
+                    // Для трех и более групп
+                    // Проверяем нормальность в каждой группе
+                    const multiGroupNormalityResults = {};
+                    
+                    // Собираем результаты тестов нормальности для всех групп
+                    groupNames.forEach((name, idx) => {
+                      const groupValues = groupArrays[idx];
+                      if (groupValues.length >= 3) { // Минимум 3 значения для теста нормальности
+                        const normalityTest = normalityTests.normalityTest(groupValues);
+                        multiGroupNormalityResults[name] = normalityTest;
+                      }
+                    });
+                    
+                    // Получаем общий статус нормальности для всех групп
+                    const multiGroupNormalityStatus = normalityTests.getGroupNormalityStatus(multiGroupNormalityResults);
+                    
+                    // Выбираем тест на основе статуса нормальности
+                    if (analysisMethod === 'parametric' || (analysisMethod === 'auto' && multiGroupNormalityStatus.isNormal)) {
+                      // Выполнение ANOVA
+                      const allValues = groupArrays.flat();
+                      
+                      let grandMean;
+                      try {
+                        grandMean = math.mean(allValues);
+                      } catch (e) {
+                        grandMean = statUtils.mean(allValues);
+                      }
+                      
+                      // Сумма квадратов между группами
+                      let ssb = 0;
+                      groupArrays.forEach(group => {
+                        if (group.length > 0) {
+                          let groupMean;
+                          try {
+                            groupMean = math.mean(group);
+                          } catch (e) {
+                            groupMean = statUtils.mean(group);
+                          }
+                          ssb += group.length * Math.pow(groupMean - grandMean, 2);
+                        }
+                      });
+                      
+                      // Сумма квадратов внутри групп
+                      let ssw = 0;
+                      groupArrays.forEach(group => {
+                        if (group.length > 0) {
+                          let groupMean;
+                          try {
+                            groupMean = math.mean(group);
+                          } catch (e) {
+                            groupMean = statUtils.mean(group);
+                          }
+                          group.forEach(value => {
+                            ssw += Math.pow(value - groupMean, 2);
+                          });
+                        }
+                      });
+                      
+                      // Степени свободы
+                      const dfb = groupNames.length - 1;
+                      const dfw = allValues.length - groupNames.length;
+                      
+                      // Средние квадраты
+                      const msb = ssb / dfb;
+                      const msw = ssw / dfw;
+                      
+                      // F-статистика
+                      const F = msb / msw;
+                      
+                      // p-значение (используя точное распределение Фишера)
+                      const pValue = 1 - statUtils.fcdf(F, dfb, dfw);
+                      
+                      // Добавляем расчет размера эффекта (η²)
+                      const etaSquared = window.effectSize.etaSquared(groupArrays, groupArrays.flat());
+                      // Добавляем расчет омега-квадрат (ω²)
+                      const omegaSquared = window.effectSize.omegaSquared(groupArrays, groupArrays.flat(), F);
+                      
+                      testResult = {
+                        type: 'ANOVA',
+                        statistic: F,
+                        dfb: dfb,
+                        dfw: dfw,
+                        pValue: pValue,
+                        formattedResult: `F(${dfb}, ${dfw}) = ${F.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)}`,
+                        effectSize: {
+                          type: 'η²',
+                          value: etaSquared,
+                          interpretation: window.effectSize.interpretEtaSquared(etaSquared)
+                        },
+                        alternativeEffectSize: {
+                          type: 'ω²',
+                          value: omegaSquared,
+                          interpretation: window.effectSize.interpretEtaSquared(omegaSquared)
+                        }
+                      };
+                    } else {
+                      // Выполнение теста Крускала-Уоллиса
+                      const allValues = groupArrays.flat();
+                      
+                      let ranks;
+                      try {
+                        ranks = statUtils.calculateRanks(allValues);
+                      } catch (e) {
+                        console.error("Error calculating ranks:", e);
+                        ranks = [];
+                      }
+                      
+                      // Сумма рангов для каждой группы
+                      const rankSums = [];
+                      const ns = [];
+                      
+                      let startIndex = 0;
+                      for (const group of groupArrays) {
+                        let rankSum = 0;
+                        for (let i = 0; i < group.length; i++) {
+                          rankSum += ranks[startIndex + i];
+                        }
+                        rankSums.push(rankSum);
+                        ns.push(group.length);
+                        startIndex += group.length;
+                      }
+                      
+                      // H-статистика
+                      let h = 0;
+                      const N = allValues.length;
+                      
+                      for (let i = 0; i < rankSums.length; i++) {
+                        h += Math.pow(rankSums[i], 2) / ns[i];
+                      }
+                      
+                      h = 12 / (N * (N + 1)) * h - 3 * (N + 1);
+                      
+                      // Степени свободы
+                      const df = groupNames.length - 1;
+                      
+                      // p-значение (используя распределение хи-квадрат)
+                      let pValue;
+                      try {
+                        pValue = 1 - statUtils.chicdf(h, df);
+                      } catch (e) {
+                        // Простое приближение для p-значения (на случай ошибки в chicdf)
+                        pValue = 1 - (1 / (1 + Math.exp(-(h - df) / Math.sqrt(2 * df))));
+                        console.error("Ошибка расчета p-value Kruskal-Wallis через chicdf, использовано приближение:", e);
+                      }
+                      
+                      // Добавляем расчет размера эффекта (ε²)
+                      const effectSize = window.effectSize.epsilonSquared(h, N);
+                      
+                      testResult = {
+                        type: 'Kruskal-Wallis test',
+                        statistic: h,
+                        df: df,
+                        pValue: pValue,
+                        formattedResult: `H(${df}) = ${h.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)}`,
+                        effectSize: {
+                          type: 'ε²',
+                          value: effectSize,
+                          interpretation: window.effectSize.interpretEpsilonSquared(effectSize)
+                        }
+                      };
+                    }
+                  }
+                }
+              }
+            }
+            
+            // В функции analyzeNumericVariable заменяем проверку нормальности
+            // Используем результат теста нормальности, который теперь всегда вычисляется
+            const isNormalDist = normalityResult ? normalityResult.isNormal : isNormal; // Используем isNormal как fallback, если тест не удался
+            
+            return {
+              variable,
+              type: 'numeric',
+              n: values.length,
+              mean,
+              median,
+              std,
+              q1,
+              q3,
+              isNormal: isNormalDist, // Используем результат теста
+              normality: normalityResult ? { // Проверяем, что normalityResult не null
+                test: normalityResult.test,
+                statistic: normalityResult.statistic,
+                pValue: normalityResult.pValue,
+                conclusion: normalityResult.conclusion, // Добавляем заключение о нормальности
+                isNormal: normalityResult.isNormal,
+                formattedResult: `${normalityResult.test}: ${normalityResult.statistic.toFixed(3)}, p ${normalityResult.pValue < 0.001 ? '< 0.001' : '= ' + normalityResult.pValue.toFixed(3)}`
+              } : { formattedResult: '-' }, // Отображаем прочерк, если тест не удался
+              groupNormalityStatus: selectedGroupVars.length > 0 ? groupNormalityStatus : null, // Добавляем общий статус нормальности групп
+              groupStats,
+              testResult,
+              pairwiseComparisons,
+              effectSize: testResult ? testResult.effectSize : null,
+              displayParametric: displayParametric,
+              values: values.length > 10000 ? values.slice(0, 10000) : values // ← ограничиваем количество точек для оптимизации
+            };
+          } catch (error) {
+            console.error(`Error analyzing numeric variable ${variable}:`, error);
+            return {
+              variable,
+              type: 'numeric',
+              error: error.message
+            };
+          }
+        };
+        
+        // Анализ категориальной переменной
+        const analyzeCategoricalVariable = (variable, data) => {
+          try {
+            // Извлечение значений переменной
+            const values = data.map(row => row[variable]).filter(val => val !== undefined && val !== null && val !== '');
+            
+            // Частоты категорий
+            const frequencies = _.countBy(values);
+            const categories = Object.keys(frequencies).sort();
+            
+            // Проценты категорий
+            const percentages = {};
+            categories.forEach(category => {
+              percentages[category] = (frequencies[category] / values.length) * 100;
+            });
+            
+            // Группировка данных, если выбрана группирующая переменная
+            let groupedStats = {};
+            let testResult = null;
+            
+            if (selectedGroupVars.length > 0) {
+              const groupVar = selectedGroupVars[0];
+              
+              // Группировка данных
+              const groupedData = _.groupBy(data.filter(row => 
+                row[variable] !== undefined && 
+                row[variable] !== null && 
+                row[variable] !== '' && 
+                row[groupVar] !== undefined && 
+                row[groupVar] !== null && 
+                row[groupVar] !== ''
+              ), row => row[groupVar]);
+              
+              // Получаем отсортированные имена групп
+              const groupNames = Object.keys(groupedData).sort();
+              
+              // Расчет статистики для каждой группы
+              groupNames.forEach(groupName => {
+                const groupValues = groupedData[groupName].map(row => row[variable]);
+                
+                const groupFreq = _.countBy(groupValues);
+                const groupPerc = {};
+                const groupTotal = groupValues.length;
+                
+                categories.forEach(category => {
+                  groupFreq[category] = groupFreq[category] || 0;
+                  groupPerc[category] = (groupFreq[category] / groupTotal) * 100;
+                });
+                
+                groupedStats[groupName] = {
+                  n: groupTotal,
+                  frequencies: groupFreq,
+                  percentages: groupPerc
+                };
+              });
+              
+              // Создание таблицы сопряженности для хи-квадрат теста
+              if (categories.length >= 2 && groupNames.length >= 2) {
+                const contingencyTable = [];
+                let totalN = 0;
+                
+                // Заполняем таблицу сопряженности
+                for (const category of categories) {
+                  const row = [];
+                  for (const group of groupNames) {
+                    const freq = groupedStats[group].frequencies[category] || 0;
+                    row.push(freq);
+                    totalN += freq;
+                  }
+                  contingencyTable.push(row);
+                }
+                
+                // Расчет хи-квадрат
+                const rowSums = contingencyTable.map(row => 
+                  row.reduce((sum, val) => sum + val, 0)
+                );
+                
+                const colSums = contingencyTable[0].map((_, colIndex) => 
+                  contingencyTable.reduce((sum, row) => sum + row[colIndex], 0)
+                );
+                
+                let chiSquare = 0;
+                let hasSmallExpected = false;
+                
+                for (let i = 0; i < contingencyTable.length; i++) {
+                  for (let j = 0; j < contingencyTable[i].length; j++) {
+                    const observed = contingencyTable[i][j];
+                    const expected = (rowSums[i] * colSums[j]) / totalN;
+                    
+                    if (expected < 5) {
+                      hasSmallExpected = true;
+                    }
+                    
+                    if (expected > 0) {
+                      chiSquare += Math.pow(observed - expected, 2) / expected;
+                    }
+                  }
+                }
+                
+                const df = (categories.length - 1) * (groupNames.length - 1);
+                
+                // p-значение (Хи-квадрат)
+                let pValue;
+                try {
+                  pValue = 1 - statUtils.chicdf(chiSquare, df);
+                } catch (e) {
+                  // Аппроксимация (на случай ошибки)
+                  pValue = 1 - (1 / (1 + Math.exp(-(chiSquare - df) / Math.sqrt(2 * df))));
+                   console.error("Ошибка расчета p-value Хи-квадрат через chicdf, использовано приближение:", e);
+                }
+                
+                // Расчет размера эффекта (Cramer's V)
+                const minDimension = Math.min(categories.length, groupNames.length);
+                const cramersV = window.effectSize.cramersV(chiSquare, totalN, minDimension);
+                
+                testResult = {
+                  type: hasSmallExpected ? 'Chi-square test*' : 'Chi-square test',
+                  statistic: chiSquare,
+                  df: df,
+                  pValue: pValue,
+                  formattedResult: `χ²(${df}) = ${chiSquare.toFixed(2)}, p ${pValue < 0.001 ? '< 0.001' : '= ' + pValue.toFixed(3)}${hasSmallExpected ? '*' : ''}`,
+                  effectSize: {
+                    type: "Cramer's V",
+                    value: cramersV,
+                    interpretation: window.effectSize.interpretCramersV(cramersV, df)
+                  }
+                };
+              }
+            }
+            
+            return {
+              variable,
+              type: 'categorical',
+              n: values.length,
+              categories,
+              frequencies,
+              percentages,
+              groupedStats,
+              testResult
+            };
+          } catch (error) {
+            console.error("Error analyzing categorical variable:", error);
+            return {
+              variable,
+              type: 'categorical',
+              error: error.message
+            };
+          }
+        };
+        
+        // Вспомогательная функция для расчета рангов
+        const calculateRanks = (values) => {
+          // Создание пар значение-индекс
+          const pairs = values.map((value, index) => ({ value, index }));
+          
+          // Сортировка по значению
+          pairs.sort((a, b) => a.value - b.value);
+          
+          // Расчет рангов с учетом связанных значений
+          const ranks = new Array(values.length);
+          let i = 0;
+          
+          while (i < pairs.length) {
+            const value = pairs[i].value;
+            let j = i + 1;
+            
+            // Поиск всех одинаковых значений
+            while (j < pairs.length && pairs[j].value === value) {
+              j++;
+            }
+            
+            // Рассчитываем средний ранг для связанных значений
+            const rank = (i + j - 1) / 2 + 1;
+            
+            // Присваиваем ранги
+            for (let k = i; k < j; k++) {
+              ranks[pairs[k].index] = rank;
+            }
+            
+            i = j;
+          }
+          
+          return ranks;
+        };
+        
+        // Форматирование значения для вывода результатов
+        const formatValue = (value) => {
+          if (value === undefined || value === null) return '';
+          
+          if (typeof value === 'number') {
+            if (Math.abs(value) < 0.001 || Math.abs(value) > 9999) {
+              return value.toExponential(2);
+            } else {
+              return value.toFixed(2);
+            }
+          }
+          
+          return value.toString();
+        };
+        
+        // Функция для форматирования числовых результатов
+        const formatNumericResults = (result, displayParametric) => {
+          // Убрана проверка analysisMethod и result.isNormal, используется переданный флаг displayParametric
+          if (isSimplifiedView) {
+            if (displayParametric) {
+              return `${formatValue(result.mean)} ± ${formatValue(result.std)}`;
+            } else {
+              return `${formatValue(result.median)} [${formatValue(result.q1)}; ${formatValue(result.q3)}]`;
+            }
+          }
+
+          if (displayParametric) {
+            return `${formatValue(result.mean)} ± ${formatValue(result.std)} (n=${result.n})`;
+          } else {
+            return `${formatValue(result.median)} [${formatValue(result.q1)}; ${formatValue(result.q3)}] (n=${result.n})`;
+          }
+        };
+
+        // Функция для форматирования категориальных результатов
+        const formatCategoricalResults = (freq, perc) => {
+          return `${freq} (${perc.toFixed(2)}%)`;
+        };
+
+        // Функция для форматирования теста нормальности
+        const formatNormalityTest = (result) => {
+          if (!result || !result.normality) return '-';
+          
+          // Для группированных данных, находим минимальное p-значение из дополнительной таблицы
+          let minPvalue = result.normality.pValue;
+          let conclusion = result.normality.conclusion ? t(result.normality.conclusion) : '';
+          
+          // Проверяем наличие данных о нормальности в группах
+          if (result.groupNormalityStatus && result.groupNormalityStatus.minPvalue !== undefined) {
+            minPvalue = result.groupNormalityStatus.minPvalue;
+            conclusion = result.groupNormalityStatus.conclusion ? t(result.groupNormalityStatus.conclusion) : conclusion;
+          }
+          
+          // Форматируем p-значение
+          const formattedPvalue = minPvalue < 0.001 ? '< 0.001' : '= ' + minPvalue.toFixed(3);
+          
+          // Для упрощенного вида показываем только минимальное p-значение
+          if (isSimplifiedView) {
+            return `p ${formattedPvalue}`;
+          }
+          
+          // Для расширенного вида показываем минимальное p-значение и заключение
+          return `p ${formattedPvalue}${conclusion ? ', ' + conclusion : ''}`;
+        };
+
+        // Модифицируем форматирование результатов тестов
+        const formatTestResult = (testResult) => {
+          if (!testResult) return '-';
+
+          // Форматирование p-значения
+          const pFormatted = testResult.pValue < 0.001 ? '< 0.001' : `= ${testResult.pValue.toFixed(3)}`;
+
+          // Форматирование текста в зависимости от типа теста
+          let statText = '';
+          if (testResult.type === 'ANOVA') {
+            statText = `F(${testResult.dfb}, ${testResult.dfw}) = ${testResult.statistic.toFixed(2)}`;
+          } else if (testResult.type === 'Kruskal-Wallis test') { // Исправлено с KW
+            statText = `H(${testResult.df}) = ${testResult.statistic.toFixed(2)}`;
+          } else if (testResult.type === 't-test') {
+            statText = `t(${testResult.df.toFixed(2)}) = ${testResult.statistic.toFixed(2)}`;
+          } else if (testResult.type === 'Mann-Whitney U test') {
+            statText = `U = ${testResult.statistic.toFixed(2)}, Z = ${testResult.Z.toFixed(2)}`;
+          } else if (testResult.type === 'Chi-square test' || testResult.type === 'Chi-square test*') {
+            statText = `χ²(${testResult.df}) = ${testResult.statistic.toFixed(2)}${testResult.type.endsWith('*') ? '*' : ''}`;
+          } else {
+            // Для других тестов или если тип не распознан, просто выводим статистику
+            statText = testResult.statistic !== undefined ? `${testResult.type}: ${testResult.statistic.toFixed(2)}` : (testResult.type || '-');
+          }
+
+          // Финальная строка
+          return `${statText}, p ${pFormatted}`;
+        };
+
+        // Функция для форматирования размера эффекта
+        const formatEffectSize = (testResult) => {
+          if (!testResult || !testResult.effectSize) return '-';
+          if (isSimplifiedView) {
+            return `${testResult.effectSize.type} = ${testResult.effectSize.value.toFixed(3)}`;
+          }
+          return `${testResult.effectSize.type} = ${testResult.effectSize.value.toFixed(3)} (${testResult.effectSize.interpretation})`;
+        };
+
+        // Функция для форматирования альтернативного размера эффекта
+        const formatAlternativeEffectSize = (testResult) => {
+          if (!testResult || !testResult.alternativeEffectSize) return '';
+          if (isSimplifiedView) {
+            return `, ${testResult.alternativeEffectSize.type} = ${testResult.alternativeEffectSize.value.toFixed(3)}`;
+          }
+          return `, ${testResult.alternativeEffectSize.type} = ${testResult.alternativeEffectSize.value.toFixed(3)} (${testResult.alternativeEffectSize.interpretation})`;
+        };
+
+        // Добавляем компонент фильтров в секцию предпросмотра
+        const renderPreview = () => (
+          <div>
+            <h3 className="font-medium mb-2">{t('previewData')}</h3>
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
+              >
+                {showFilters ? t('hideFilters') : t('showFilters')}
+              </button>
+            </div>
+            
+            {showFilters && (
+              <div className="mb-4 p-4 border border-gray-200 rounded bg-gray-50">
+                <div className="grid grid-cols-4 gap-4">
+                  {headers.map((header, index) => (
+                    header && (
+                      <div key={index} className="flex flex-col">
+                        <label className="text-sm font-medium mb-1">{header}</label>
+                        <input
+                          type="text"
+                          value={filters[header] || ''}
+                          onChange={(e) => {
+                            const newFilters = { ...filters, [header]: e.target.value };
+                            setFilters(newFilters);
+                          }}
+                          placeholder={t('filterPlaceholder')}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                    )
+                  ))}
+                </div>
+                <div className="mt-4 flex justify-end space-x-2">
+                  <button
+                    onClick={() => {
+                      setFilters({});
+                      setFilteredData(parsedData);
+                    }}
+                    className="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
+                  >
+                    {t('reset')}
+                  </button>
+                  <button
+                    onClick={applyFilters}
+                    className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
+                  >
+                    {t('apply')}
+                  </button>
+                </div>
+                <div className="mt-2 text-sm text-gray-600">
+                  <p>{t('supportedOperators')}</p>
+                  <ul className="list-disc list-inside">
+                    <li>{t('opNumeric')}</li>
+                    <li>{t('opExact')}</li>
+                    <li>{t('opMulti')}</li>
+                    <li>{t('opText')}</li>
+                  </ul>
+                </div>
+              </div>
+            )}
+            
+            <div className="overflow-x-auto border border-gray-300 rounded">
+              <table className="w-full border-collapse table-auto">
+                <thead>
+                  <tr className="bg-gray-200">
+                    {headers.map((header, index) => (
+                      <th key={index} className="border border-gray-300 p-2 text-left">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.slice(0, 5).map((row, rowIndex) => (
+                    <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                      {headers.map((_, colIndex) => (
+                        <td key={colIndex} className="border border-gray-300 p-2">
+                          {row[colIndex]}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="text-right mt-2 text-sm text-gray-600">
+                {t('shownRows').replace('{shown}', Math.min(5, filteredData.length)).replace('{total}', filteredData.length)}
+              </div>
+            </div>
+          </div>
+        );
+
+        // Загрузка обучающего датасета
+        const loadTutorialData = () => {
+          try {
+            // Проверка наличия данных в tutorialData.js
+            if (typeof window.tutorialDataString === 'undefined' || !window.tutorialDataString) {
+              alert('Обучающий датасет не найден.');
+              return;
+            }
+
+            // Используем PapaParse для разбора строки
+            Papa.parse(window.tutorialDataString, {
+              header: false, // Первая строка - не заголовки для PapaParse, обработаем вручную
+              skipEmptyLines: true,
+              delimiter: "\t", // Указываем табуляцию как разделитель
+              complete: (results) => {
+                if (results.errors.length > 0) {
+                  console.error("Errors parsing tutorial data:", results.errors);
+                  alert('Ошибка при разборе обучающего датасета.');
+                  return;
+                }
+
+                const jsonData = results.data;
+
+                if (jsonData.length > 0) {
+                  const headerRow = jsonData[0];
+                  const dataRows = jsonData.slice(1).filter(row => row.length > 0 && row.some(cell => cell !== null && cell !== ''));
+
+                  setHeaders(headerRow);
+                  setParsedData(dataRows);
+                  analyzeVariables(headerRow, dataRows);
+                  
+                  // Сбрасываем состояние файла и листов
+                  setFile(null);
+                  setSheets([]);
+                  setSelectedSheet('');
+                  // Сбрасываем результаты предыдущего анализа
+                  setResults(null);
+                  setSelectedAnalysisVars([]);
+                  setSelectedGroupVars([]);
+                  setSelectedVariables([]);
+                  setFilters({}); // Сбрасываем фильтры
+
+                  console.log('Обучающий датасет успешно загружен.');
+                } else {
+                  setHeaders([]);
+                  setParsedData([]);
+                  setVariableInfo({});
+                  alert('Обучающий датасет пуст или не удалось разобрать.');
+                }
+              }
+            });
+          } catch (error) {
+            console.error("Error loading tutorial data:", error);
+            alert("Ошибка при загрузке обучающего датасета: " + error.message);
+          }
+        };
+
+        // --- Функция добавления всех находок ---
+        const handleAddAllFindingsToReport = () => {
+            if (!results || results.length === 0) {
+                alert(t('reportNoResultsToAddError'));
+                return;
+            }
+            if (!window.ReportGenerator) {
+                 console.error("ReportGenerator module is not loaded.");
+                 alert(t('reportGeneratorNotLoadedError'));
+                 return;
+            }
+
+            let addedCount = 0;
+            results.forEach(result => {
+                if (result.error) return; // Пропускаем результаты с ошибками
+
+                 // Извлекаем метаданные для текущего результата (заменяем ?.)
+                 const analysisMetadata = {
+                    variableType: result.type,
+                    displayParametric: result.displayParametric,
+                    normalityTestUsed: (result.normality && result.normality.test),
+                    normalityPassed: (result.normality && result.normality.isNormal),
+                    groupNormalityPassed: (result.groupNormalityStatus && result.groupNormalityStatus.isNormal),
+                    testType: (result.testResult && result.testResult.type),
+                    effectSizeType: (result.testResult && result.testResult.effectSize && result.testResult.effectSize.type),
+                    alternativeEffectSizeType: (result.testResult && result.testResult.alternativeEffectSize && result.testResult.alternativeEffectSize.type),
+                    pairwiseMethod: (result.pairwiseComparisons && result.pairwiseComparisons[0] && result.pairwiseComparisons[0].method),
+                    groupsCompared: !!(result.groupStats || result.groupedStats)
+                };
+                Object.keys(analysisMetadata).forEach(key => {
+                    // Удаляем ключ, если значение null, undefined или false (кроме displayParametric)
+                    if (analysisMetadata[key] === undefined || analysisMetadata[key] === null || (analysisMetadata[key] === false && key !== 'displayParametric')) {
+                       delete analysisMetadata[key];
+                    }
+                });
+
+                // Генерируем текстовое описание
+                const findingsText = ReportGenerator.generateFindingsText(result);
+
+                // Добавляем текст в отчет с метаданными
+                 ReportGenerator.addToReport({
+                    type: 'text',
+                    // Добавляем имя переменной в начало для ясности
+                    content: `[${result.variable}]\n${findingsText || t('reportFindingsGenerationError')}`,
+                    metadata: analysisMetadata
+                });
+                addedCount++;
+            });
+
+            if (addedCount > 0) {
+                alert(t('reportAllFindingsAddedSuccess').replace('{count}', addedCount));
+            } else {
+                alert(t('reportNoResultsToAddError')); // Если все результаты были с ошибками
+            }
+        };
+
+        // --- Прикрепляем функцию к window для доступа извне ---
+        React.useEffect(() => {
+            window.statix_handleAddAllFindings = handleAddAllFindingsToReport;
+            // Очистка при размонтировании
+            return () => {
+                delete window.statix_handleAddAllFindings;
+            };
+        }, [results]); // Пересоздаем ссылку на функцию, если results изменились
+
+        // --- Обновляем useEffect для обновления текста кнопок ---
+        React.useEffect(() => {
+          const addAllBtn = document.getElementById('add-all-findings-btn');
+          const clearReportBtn = document.getElementById('clear-report-btn');
+          const generateHtmlBtn = document.getElementById('generate-html-btn'); // Используем новый ID
+          const viewReportBtn = document.getElementById('view-report-btn'); // Добавляем новую кнопку
+          if(addAllBtn && window.t) addAllBtn.textContent = t('reportAddAllFindingsButton');
+          if(clearReportBtn && window.t) clearReportBtn.textContent = t('reportClearButton');
+          if(generateHtmlBtn && window.t) generateHtmlBtn.textContent = t('reportGenerateHtmlButton');
+          if(viewReportBtn && window.t) viewReportBtn.textContent = t('reportViewButton'); // Обновляем текст для новой кнопки
+        }, [window.currentLang]);
+
+        // Заменяем секцию предпросмотра в основном рендере
+        return (
+          <div className="bg-gray-100 min-h-screen p-4">
+            <div className="max-w-7xl mx-auto bg-white rounded-lg shadow-lg p-6">
+              <h1 className="text-3xl font-bold text-center mb-6">{t('appTitle')}</h1>
+              
+              {/* Шаг 1: Загрузка файла */}
+              <div className="mb-8 p-4 border border-gray-200 rounded-lg">
+                <h2 className="text-xl font-semibold mb-4">{t('step1')}</h2>
+                
+                <div className="flex items-center mb-4">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    accept=".xlsx,.xls,.csv"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current.click()}
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mr-4"
+                  >
+                    {t('chooseFile')}
+                  </button>
+                  {/* Добавляем кнопку загрузки обучающего датасета */}
+                  <button
+                    onClick={loadTutorialData}
+                    className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 mr-4"
+                  >
+                    {t('loadTutorialDataset')} {/* Убедитесь, что этот ключ есть в i18n.js */}
+                  </button>
+                  <span className="text-gray-600">
+                    {file ? `${t('selectedFile')}: ${file.name}` : t('fileNotSelected')}
+                  </span>
+                </div>
+                
+                {sheets.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block mb-2 font-medium">Выберите лист:</label>
+                    <select
+                      value={selectedSheet}
+                      onChange={handleSheetChange}
+                      className="border border-gray-300 rounded p-2 w-full max-w-xs"
+                    >
+                      {sheets.map((sheet, index) => (
+                        <option key={index} value={sheet}>
+                          {sheet}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+              
+              {/* Шаг 2: Выбор переменных */}
+              {headers.length > 0 && (
+                <div className="mb-8 p-4 border border-gray-200 rounded-lg">
+                  <h2 className="text-xl font-semibold mb-4">{t('step2')}</h2>
+                  
+                  <div className="mb-4">
+                    <label className="block mb-2 font-medium">
+                      {t('filterByMissing')}
+                    </label>
+                    <div className="flex items-center">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={missingValuesThreshold}
+                        onChange={(e) => setMissingValuesThreshold(Number(e.target.value))}
+                        className="mr-4"
+                      />
+                      <span>{missingValuesThreshold}%</span>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h3 className="font-medium mb-2">{t('variablesForAnalysis')}</h3>
+                      <div className="mb-2">
+                        <button
+                          onClick={() => selectAllVariablesOfType('numeric')}
+                          className="bg-gray-200 text-gray-800 px-3 py-1 rounded text-sm mr-2 hover:bg-gray-300"
+                        >
+                          {t('selectAllNumeric')}
+                        </button>
+                        <button
+                          onClick={() => selectAllVariablesOfType('categorical')}
+                          className="bg-gray-200 text-gray-800 px-3 py-1 rounded text-sm hover:bg-gray-300"
+                        >
+                          {t('selectAllCategorical')}
+                        </button>
+                      </div>
+                      <div className="h-64 overflow-y-auto border border-gray-300 rounded p-2">
+                        {headers.map((header, index) => {
+                          if (!header) return null;
+                          
+                          const varInfo = variableInfo[header] || {};
+                          const varType = variableTypes[header] || 'unknown';
+                          
+                          if (varType === 'skip' || varType === 'id' || varInfo.missingPercentage > missingValuesThreshold) {
+                            return null;
+                          }
+                          
+                          return (
+                            <div key={index} className="flex items-center mb-2 p-1 hover:bg-gray-100">
+                              <input
+                                type="checkbox"
+                                id={`var-${index}`}
+                                checked={selectedAnalysisVars.includes(header)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedAnalysisVars([...selectedAnalysisVars, header]);
+                                  } else {
+                                    setSelectedAnalysisVars(selectedAnalysisVars.filter(v => v !== header));
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              <label htmlFor={`var-${index}`} className="flex-grow">
+                                {header}
+                              </label>
+                              <select
+                                value={varType}
+                                onChange={(e) => handleVariableTypeChange(header, e.target.value)}
+                                className="text-sm border border-gray-300 rounded ml-2"
+                              >
+                                <option value="numeric">{t('variableTypeNumeric')}</option>
+                                <option value="categorical">{t('variableTypeCategorical')}</option>
+                                <option value="id">{t('variableTypeId')}</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <h3 className="font-medium mb-2">{t('groupVariables')}</h3>
+                      <div className="h-64 overflow-y-auto border border-gray-300 rounded p-2">
+                        {headers.map((header, index) => {
+                          if (!header) return null;
+                          
+                          const varInfo = variableInfo[header] || {};
+                          const varType = variableTypes[header] || 'unknown';
+                          
+                          if (varType === 'id' || varInfo.missingPercentage > missingValuesThreshold) {
+                            return null;
+                          }
+                          
+                          return (
+                            <div key={index} className="flex items-center mb-2 p-1 hover:bg-gray-100">
+                              <input
+                                type="checkbox"
+                                id={`group-${index}`}
+                                checked={selectedGroupVars.includes(header)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedGroupVars([...selectedGroupVars, header]);
+                                  } else {
+                                    setSelectedGroupVars(selectedGroupVars.filter(v => v !== header));
+                                  }
+                                }}
+                                className="mr-2"
+                              />
+                              <label htmlFor={`group-${index}`} className="flex-grow">
+                                {header}
+                              </label>
+                              <span className="text-sm text-gray-500 ml-2">
+                                {varType === 'categorical' ? t('groupTypeCategorical') : t('groupTypeNumeric')}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4">
+                    {renderPreview()}
+                  </div>
+                </div>
+              )}
+              
+              {/* Шаг 3: Настройки анализа */}
+              {headers.length > 0 && (
+                <div className="mb-8 p-4 border border-gray-200 rounded-lg">
+                  <h2 className="text-xl font-semibold mb-4">{t('step3')}</h2>
+                  
+                  <div className="mb-4">
+                    <label className="block mb-2 font-medium">{t('analysisMethod')}</label>
+                    <div className="flex">
+                      <label className="inline-flex items-center mr-4">
+                        <input
+                          type="radio"
+                          name="analysisMethod"
+                          value="auto"
+                          checked={analysisMethod === 'auto'}
+                          onChange={() => setAnalysisMethod('auto')}
+                          className="mr-2"
+                        />
+                        {t('methodAuto')}
+                      </label>
+                      <label className="inline-flex items-center mr-4">
+                        <input
+                          type="radio"
+                          name="analysisMethod"
+                          value="parametric"
+                          checked={analysisMethod === 'parametric'}
+                          onChange={() => setAnalysisMethod('parametric')}
+                          className="mr-2"
+                        />
+                        {t('methodParametric')}
+                      </label>
+                      <label className="inline-flex items-center">
+                        <input
+                          type="radio"
+                          name="analysisMethod"
+                          value="nonparametric"
+                          checked={analysisMethod === 'nonparametric'}
+                          onChange={() => setAnalysisMethod('nonparametric')}
+                          className="mr-2"
+                        />
+                        {t('methodNonparametric')}
+                      </label>
+                    </div>
+                  </div>
+                  
+                  {/* Настройки метода Монте-Карло */}
+                  <div className="mb-4">
+                    <label className="block mb-2 font-medium">{t('monteCarloSettings')}</label>
+                    <div className="flex items-center mb-2">
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useMonteCarloMethod}
+                          onChange={(e) => setUseMonteCarloMethod(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="relative w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer 
+                          peer-checked:after:translate-x-full peer-checked:after:border-white 
+                          after:content-[''] after:absolute after:top-[2px] after:left-[2px] 
+                          after:bg-white after:border-gray-300 after:border after:rounded-full 
+                          after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        <span className="ml-3 text-sm font-medium text-gray-900">
+                          {t('useMonteCarloMethod')}
+                        </span>
+                      </label>
+                    </div>
+                    {useMonteCarloMethod && (
+                      <div className="ml-6 mt-2">
+                        <label className="block text-sm font-medium mb-1">{t('monteCarloIterations')}</label>
+                        <div className="flex items-center">
+                          <input
+                            type="number"
+                            min="1000"
+                            max="100000"
+                            step="1000"
+                            value={monteCarloIterations}
+                            onChange={(e) => setMonteCarloIterations(parseInt(e.target.value))}
+                            className="border border-gray-300 rounded p-2 w-32"
+                          />
+                          <div className="ml-4 text-sm text-gray-600">
+                            {t('monteCarloRecommendation')}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Добавляем выбор метода попарных сравнений */}
+                  <div className="mb-4">
+                    <label className="block mb-2 font-medium">{t('pairwiseComparisonSettings') || 'Настройки попарных сравнений'}</label>
+                    <div className="flex flex-wrap">
+                      <div className="w-full md:w-1/2 mb-2 pr-2">
+                        <label className="block text-sm font-medium mb-1">{t('parametricMethod') || 'Параметрический метод'}</label>
+                        <select 
+                          value={pairwiseComparisonMethod.parametric}
+                          onChange={(e) => setPairwiseComparisonMethod({
+                            ...pairwiseComparisonMethod,
+                            parametric: e.target.value
+                          })}
+                          className="border border-gray-300 rounded p-2 w-full"
+                        >
+                          <option value="tukey">{t('tukey') || 'Тьюки'}</option>
+                          <option value="scheffe">{t('scheffe') || 'Шеффе'}</option>
+                          <option value="lsd">{t('lsd') || "Fisher's LSD"}</option>
+                          <option value="dunnett">{t('dunnett') || 'Даннета'}</option>
+                        </select>
+                      </div>
+                      <div className="w-full md:w-1/2 mb-2 pl-2">
+                        <label className="block text-sm font-medium mb-1">{t('nonParametricMethod') || 'Непараметрический метод'}</label>
+                        <select 
+                          value={pairwiseComparisonMethod.nonParametric}
+                          onChange={(e) => setPairwiseComparisonMethod({
+                            ...pairwiseComparisonMethod,
+                            nonParametric: e.target.value
+                          })}
+                          className="border border-gray-300 rounded p-2 w-full"
+                        >
+                          <option value="dunn">{t('dunn') || 'Данн'}</option>
+                          <option value="steel-dwass">{t('steelDwass') || 'Steel-Dwass-Critchlow-Flinger'}</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-2">
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={showPairwiseComparisons}
+                          onChange={(e) => setShowPairwiseComparisons(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="relative w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer 
+                          peer-checked:after:translate-x-full peer-checked:after:border-white 
+                          after:content-[''] after:absolute after:top-[2px] after:left-[2px] 
+                          after:bg-white after:border-gray-300 after:border after:rounded-full 
+                          after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        <span className="ml-3 text-sm font-medium text-gray-900">
+                          {t('showPairwiseComparisons') || 'Показывать попарные сравнения'}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <button
+                    onClick={runAnalysis}
+                    disabled={isAnalyzing || selectedAnalysisVars.length === 0}
+                    className={`px-4 py-2 rounded text-white ${
+                      isAnalyzing || selectedAnalysisVars.length === 0
+                        ? 'bg-gray-400 cursor-not-allowed'
+                        : 'bg-green-600 hover:bg-green-700'
+                    }`}
+                  >
+                    {isAnalyzing ? t('analyzing') : t('runAnalysis')}
+                  </button>
+                </div>
+              )}
+              
+              {/* Результаты анализа */}
+              {results && results.length > 0 && (
+                <div className="p-4 border border-gray-200 rounded-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold">{t('analysisResults')}</h2>
+                    <div className="flex items-center space-x-4">
+                      <label className="inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={isSimplifiedView}
+                          onChange={(e) => setIsSimplifiedView(e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="relative w-11 h-6 bg-gray-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer 
+                          peer-checked:after:translate-x-full peer-checked:after:border-white 
+                          after:content-[''] after:absolute after:top-[2px] after:left-[2px] 
+                          after:bg-white after:border-gray-300 after:border after:rounded-full 
+                          after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        <span className="ml-3 text-sm font-medium text-gray-900">
+                          {isSimplifiedView ? t('simplifiedView') : t('fullView')}
+                        </span>
+                      </label>
+                      <button
+                        onClick={() => setShowGraphs(!showGraphs)}
+                        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      >
+                        {showGraphs ? t('hideGraphs') : t('showGraphs')}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="overflow-x-auto">
+                    <table id="main-analysis-table" className="min-w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-gray-200">
+                          <th className="border border-gray-300 p-1 text-left">{t('chart')}</th>
+                          <th className="border border-gray-300 p-1 text-left">{t('variable')}</th>
+                          {selectedGroupVars.length > 0 && (
+                            <th className="border border-gray-300 p-1 text-left">{t('category')}</th>
+                          )}
+                          
+                          {/* Заголовки групп */}
+                          {selectedGroupVars.length > 0 && (
+                            (() => {
+                              // Вычисляем максимальные размеры для каждой группы
+                              const groupSizes = {};
+                              results.forEach(result => {
+                                if (result.groupStats) {
+                                  Object.entries(result.groupStats).forEach(([group, stats]) => {
+                                    groupSizes[group] = Math.max(groupSizes[group] || 0, stats.n);
+                                  });
+                                } else if (result.groupedStats) {
+                                  Object.entries(result.groupedStats).forEach(([group, stats]) => {
+                                    groupSizes[group] = Math.max(groupSizes[group] || 0, stats.n);
+                                  });
+                                }
+                              });
+                              
+                              // Получаем все уникальные группы из всех результатов
+                              const allGroups = new Set();
+                              results.forEach(result => {
+                                if (result.groupStats) {
+                                  Object.keys(result.groupStats).forEach(group => allGroups.add(group));
+                                } else if (result.groupedStats) {
+                                  Object.keys(result.groupedStats).forEach(group => allGroups.add(group));
+                                }
+                              });
+                              
+                              return Array.from(allGroups).sort().map((group, index) => (
+                                <th key={index} className="border border-gray-300 p-1 text-left">
+                                  {`${selectedGroupVars[0]}: ${String(group)} (n = ${groupSizes[group] || 0})`}
+                                </th>
+                              ));
+                            })()
+                          )}
+                          
+                          {/* Колонка "Все данные" с максимальным n */}
+                          <th className="border border-gray-300 p-1 text-left">
+                            {(() => {
+                              // Находим максимальное количество наблюдений среди всех переменных
+                              const maxN = Math.max(...results.map(result => {
+                                if (result.type === 'numeric') {
+                                  return result.n;
+                                } else if (result.type === 'categorical') {
+                                  return result.n;
+                                }
+                                return 0;
+                              }));
+                              return t('allData').replace('{n}', maxN);
+                            })()}
+                          </th>
+                          
+                          <th className="border border-gray-300 p-1 text-left">{t('normalityTest')}</th>
+                          {selectedGroupVars.length > 0 && (
+                            <th className="border border-gray-300 p-1 text-left">{t('statTest')}</th>
+                          )}
+                          {selectedGroupVars.length > 0 && (
+                            <th className="border border-gray-300 p-1 text-left">{t('effectSize')}</th>
+                          )}
+                          
+                          {/* Добавляем заголовки для попарных сравнений, если они включены */}
+                          {showPairwiseComparisons && selectedGroupVars.length > 0 && (
+                            (() => {
+                              // Находим все возможные пары сравнений из всех результатов
+                              const allPairs = new Set();
+                              
+                              results.forEach(result => {
+                                if (result.pairwiseComparisons && result.pairwiseComparisons.length > 0) {
+                                  result.pairwiseComparisons.forEach(comp => {
+                                    allPairs.add(`${comp.group1} vs ${comp.group2}`);
+                                  });
+                                }
+                              });
+                              
+                              return Array.from(allPairs).sort().map((pairName, index) => (
+                                <th key={`pair-${index}`} className="border border-gray-300 p-1 text-left bg-blue-50">
+                                  {pairName}
+                                </th>
+                              ));
+                            })()
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {/* Сначала отображаем количественные переменные */}
+                        {results
+                          .sort((a, b) => {
+                            if (a.type === 'numeric' && b.type !== 'numeric') return -1;
+                            if (a.type !== 'numeric' && b.type === 'numeric') return 1;
+                            return 0;
+                          })
+                          .map((result, resultIndex) => {
+                          if (result.type === 'numeric') {
+                            return (
+                              <tr key={resultIndex} className={resultIndex % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                <td className="border border-gray-300 p-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedVariables.includes(result.variable)}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedVariables([...selectedVariables, result.variable]);
+                                      } else {
+                                        setSelectedVariables(selectedVariables.filter(v => v !== result.variable));
+                                      }
+                                    }}
+                                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                  />
+                                </td>
+                                <td className="border border-gray-300 p-1">
+                                  {result.variable}
+                                  <div className="text-xs text-gray-500">
+                                    {/* Используем displayParametric для определения подписи */}
+                                    {result.displayParametric
+                                      ? t('meanSd')
+                                      : t('medianQ')}
+                                  </div>
+                                </td>
+                                
+                                {selectedGroupVars.length > 0 && (
+                                  <td className="border border-gray-300 p-1">-</td>
+                                )}
+                                
+                                {/* Значения для каждой группы */}
+                                {selectedGroupVars.length > 0 && result.groupStats && (
+                                  Object.entries(result.groupStats).sort().map(([group, groupData], index) => (
+                                    <td key={index} className="border border-gray-300 p-1">
+                                      {/* Передаем displayParametric в форматирование группы */}
+                                      {formatNumericResults(groupData, result.displayParametric)}
+                                    </td>
+                                  ))
+                                )}
+                                
+                                <td className="border border-gray-300 p-1">
+                                  {/* Передаем displayParametric в форматирование общих данных */}
+                                  {formatNumericResults(result, result.displayParametric)}
+                                </td>
+                                
+                                <td className="border border-gray-300 p-1">
+                                  {formatNormalityTest(result)}
+                                </td>
+                                
+                                {selectedGroupVars.length > 0 && (
+                                  <td className="border border-gray-300 p-1">
+                                    {formatTestResult(result.testResult)}
+                                  </td>
+                                )}
+                                
+                                {selectedGroupVars.length > 0 && (
+                                  <td className="border border-gray-300 p-1">
+                                    {formatEffectSize(result.testResult)}{formatAlternativeEffectSize(result.testResult)}
+                                  </td>
+                                )}
+                                
+                                {/* Добавляем ячейки для попарных сравнений */}
+                                {showPairwiseComparisons && selectedGroupVars.length > 0 && (
+                                  (() => {
+                                    // Находим все возможные пары
+                                    const allPairs = new Set();
+                                    results.forEach(res => {
+                                      if (res.pairwiseComparisons && res.pairwiseComparisons.length > 0) {
+                                        res.pairwiseComparisons.forEach(comp => {
+                                          allPairs.add(`${comp.group1} vs ${comp.group2}`);
+                                        });
+                                      }
+                                    });
+                                    
+                                    // Создаем map для быстрого доступа к сравнениям текущей переменной
+                                    const comparisonsMap = {};
+                                    if (result.pairwiseComparisons) {
+                                      result.pairwiseComparisons.forEach(comp => {
+                                        comparisonsMap[`${comp.group1} vs ${comp.group2}`] = comp;
+                                      });
+                                    }
+                                    
+                                    // Форматируем вывод для каждой пары
+                                    return Array.from(allPairs).sort().map((pairName, index) => {
+                                      const comparison = comparisonsMap[pairName];
+                                      
+                                      if (!comparison) {
+                                        return <td key={`pair-${index}`} className="border border-gray-300 p-1 bg-blue-50">-</td>;
+                                      }
+                                      
+                                      const isSignificant = comparison.pValue < 0.05;
+                                      let formattedText = '';
+                                      
+                                      if (isSimplifiedView) {
+                                        // Упрощенный вид: только p-значение с обозначением уровня значимости
+                                        let significance = '';
+                                        if (comparison.pValue < 0.001) significance = '***'; 
+                                        else if (comparison.pValue < 0.01) significance = '**';
+                                        else if (comparison.pValue < 0.05) significance = '*';
+                                        
+                                        formattedText = comparison.pValue < 0.001 
+                                          ? `p < 0.001${significance}`
+                                          : `p = ${comparison.pValue.toFixed(3)}${significance}`;
+                                      } else {
+                                        // Полный вид в формате APA-7
+                                        const diffValue = result.displayParametric 
+                                          ? comparison.meanDiff.toFixed(2)
+                                          : comparison.meanRankDiff.toFixed(2);
+                                          
+                                        const diffType = result.displayParametric 
+                                          ? 'Δ'
+                                          : 'ΔR';
+                                          
+                                        const statValue = comparison.statistic.toFixed(2);
+                                        const methodSymbol = result.displayParametric 
+                                          ? (comparison.method === 'tukey' ? 'q' : 
+                                             comparison.method === 'scheffe' ? 'F' : 't')
+                                          : (comparison.method === 'dunn' ? 'z' : 't');
+                                          
+                                        const pFormatted = comparison.pValue < 0.001 
+                                          ? 'p < .001' 
+                                          : `p = ${comparison.pValue.toFixed(3)}`.replace('0.', '.');
+                                          
+                                        formattedText = `${diffType} = ${diffValue}, SE = ${comparison.se.toFixed(2)}, ${methodSymbol} = ${statValue}, ${pFormatted}`;
+                                      }
+                                      
+                                      return (
+                                        <td 
+                                          key={`pair-${index}`} 
+                                          className={`border border-gray-300 p-1 ${isSignificant ? 'font-medium text-red-600' : ''} bg-blue-50`}
+                                        >
+                                          {formattedText}
+                                        </td>
+                                      );
+                                    });
+                                  })()
+                                )}
+                              </tr>
+                            );
+                          } else if (result.type === 'categorical') {
+                            return result.categories.map((category, catIndex) => (
+                              <tr key={`${resultIndex}-${catIndex}`} className={(resultIndex + catIndex) % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                {catIndex === 0 && (
+                                  <td className="border border-gray-300 p-1" rowSpan={result.categories.length}>
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedVariables.includes(result.variable)}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedVariables([...selectedVariables, result.variable]);
+                                        } else {
+                                          setSelectedVariables(selectedVariables.filter(v => v !== result.variable));
+                                        }
+                                      }}
+                                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    />
+                                  </td>
+                                )}
+                                {catIndex === 0 ? (
+                                  <td className="border border-gray-300 p-1" rowSpan={result.categories.length}>
+                                    {result.variable}
+                                    <div className="text-xs text-gray-500">
+                                      {t('nPercent')}
+                                    </div>
+                                  </td>
+                                ) : null}
+                                
+                                <td className="border border-gray-300 p-1">{category}</td>
+                                
+                                {/* Значения для каждой группы */}
+                                {selectedGroupVars.length > 0 && result.groupedStats && (
+                                  Object.entries(result.groupedStats).sort().map(([group, groupData], index) => (
+                                    <td key={index} className="border border-gray-300 p-1">
+                                      {formatCategoricalResults(groupData.frequencies[category], groupData.percentages[category])}
+                                    </td>
+                                  ))
+                                )}
+                                
+                                <td className="border border-gray-300 p-1">
+                                  {formatCategoricalResults(result.frequencies[category], result.percentages[category])}
+                                </td>
+                                
+                                {catIndex === 0 && (
+                                  <td className="border border-gray-300 p-1" rowSpan={result.categories.length}>
+                                    -
+                                  </td>
+                                )}
+                                
+                                {catIndex === 0 && selectedGroupVars.length > 0 && (
+                                  <td className="border border-gray-300 p-1" rowSpan={result.categories.length}>
+                                    {formatTestResult(result.testResult)}
+                                  </td>
+                                )}
+                                
+                                {catIndex === 0 && selectedGroupVars.length > 0 && (
+                                  <td className="border border-gray-300 p-1" rowSpan={result.categories.length}>
+                                    {formatEffectSize(result.testResult)}{formatAlternativeEffectSize(result.testResult)}
+                                  </td>
+                                )}
+                                
+                                {/* Пустые ячейки для попарных сравнений (неприменимо для категориальных переменных) */}
+                                {showPairwiseComparisons && selectedGroupVars.length > 0 && catIndex === 0 && (
+                                  (() => {
+                                    const allPairs = new Set();
+                                    results.forEach(res => {
+                                      if (res.pairwiseComparisons && res.pairwiseComparisons.length > 0) {
+                                        res.pairwiseComparisons.forEach(comp => {
+                                          allPairs.add(`${comp.group1} vs ${comp.group2}`);
+                                        });
+                                      }
+                                    });
+                                    
+                                    return Array.from(allPairs).sort().map((pairName, index) => (
+                                      <td key={`pair-${index}`} className="border border-gray-300 p-1 bg-blue-50" rowSpan={result.categories.length}>-</td>
+                                    ));
+                                  })()
+                                )}
+                              </tr>
+                            ));
+                          }
+                          return null;
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Отображение графиков для выбранных переменных */}
+                  {showGraphs && (
+                    <div className="mt-6">
+                      <h3 className="font-semibold mb-2">{t('graphsTitle') || 'Графики'}</h3>
+                      <div className="space-y-6">
+                        {results.filter(result => selectedVariables.includes(result.variable)).map((result, index) => (
+                          <div key={index} className="border border-gray-200 rounded-lg p-4">
+                            <h4 className="font-medium mb-2">{result.variable}</h4>
+                            <GraphComponent
+                              variable={result.variable}
+                              data={result}
+                              groupVar={selectedGroupVars[0]}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Добавляем секцию примечаний */}
+                  <div className="mt-6 text-sm text-gray-600">
+                    <h3 className="font-semibold mb-2">{t('notes')}</h3>
+                    <ol className="list-decimal list-inside space-y-2">
+                      {/* Обозначения для представления данных */}
+                      <li>{t('notesData')}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesData1')}</li>
+                          <li>{t('notesData2')}</li>
+                          <li>{t('notesData3')}</li>
+                        </ul>
+                      </li>
+                      {/* Тесты нормальности */}
+                      <li>{t('notesNormality')}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesNormality1')}</li>
+                          <li>{t('notesNormality2')}</li>
+                          <li>{t('notesNormality3')}</li>
+                        </ul>
+                      </li>
+                      {/* Статистические тесты */}
+                      <li>{t('notesTests')}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesTests1')}</li>
+                          <li>{t('notesTests2')}</li>
+                          <li>{t('notesTests3')}</li>
+                          <li>{t('notesTests4')}</li>
+                          <li>{t('notesTests5')}</li>
+                          <li>{t('notesTests6')}</li>
+                        </ul>
+                      </li>
+                      {/* Попарные сравнения */}
+                      <li>{t('notesPairwise') || 'Попарные сравнения:'}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesPairwise1') || 'Для нормальных данных: метод Тьюки (по умолчанию), Шеффе, Даннета или Fisher\'s LSD'}</li>
+                          <li>{t('notesPairwise2') || 'Для ненормальных данных: метод Данна (по умолчанию) или Steel-Dwass-Critchlow-Flinger'}</li>
+                          <li>{t('notesPairwise3') || 'Красным цветом выделены статистически значимые различия (p < 0.05)'}</li>
+                          <li>{t('notesPairwise4') || 'Δ - разница средних для параметрических методов, ΔR - разница рангов для непараметрических'}</li>
+                          <li>{t('notesPairwise5') || 'SE - стандартная ошибка разности'}</li>
+                        </ul>
+                      </li>
+                      {/* Размеры эффекта */}
+                      <li>{t('notesEffect')}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesEffect1')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect1s')}</li>
+                            </ul>
+                          </li>
+                          <li>{t('notesEffect2')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect2s')}</li>
+                            </ul>
+                          </li>
+                          <li>{t('notesEffect3')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect3s')}</li>
+                            </ul>
+                          </li>
+                          <li>{t('notesEffect3_omega')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect3_omega_s')}</li>
+                            </ul>
+                          </li>
+                          <li>{t('notesEffect4')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect4s')}</li>
+                            </ul>
+                          </li>
+                          <li>{t('notesEffect5')}
+                            <ul className="list-[circle] list-inside ml-4">
+                              <li>{t('notesEffect5s')}</li>
+                            </ul>
+                          </li>
+                        </ul>
+                      </li>
+                      {/* Дополнительные пояснения */}
+                      <li>{t('notesExtra')}
+                        <ul className="list-disc list-inside ml-4 mt-1">
+                          <li>{t('notesExtra1')}</li>
+                          <li>{t('notesExtra2')}</li>
+                          <li>{t('notesExtra3')}</li>
+                          <li>{t('notesExtra4')}</li>
+                        </ul>
+                      </li>
+                    </ol>
+                  </div>
+
+                  {/* ВСПОМОГАТЕЛЬНАЯ ТАБЛИЦА: нормальность по группам */}
+                  {selectedGroupVars.length > 0 && results && results.some(r => r.groupStats && Object.keys(r.groupStats).length > 0) && (
+                    <div className="mt-8">
+                      <h3 className="font-semibold mb-2">{t('groupNormalityTable') || 'Тест нормальности по группам'}</h3>
+                      <div className="overflow-x-auto border border-gray-300 rounded">
+                        <table className="min-w-full border-collapse">
+                          <thead>
+                            <tr className="bg-gray-200">
+                              <th className="border border-gray-300 p-2 text-left">{t('variable')}</th>
+                              <th className="border border-gray-300 p-2 text-left">{t('group')}</th>
+                              <th className="border border-gray-300 p-2 text-left">{t('normalityTest')}</th>
+                              <th className="border border-gray-300 p-2 text-left">{t('statistic')}</th>
+                              <th className="border border-gray-300 p-2 text-left">p-value</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {results.filter(r => r.groupStats && Object.keys(r.groupStats).length > 0).map((result, resultIdx) => (
+                              Object.entries(result.groupStats).map(([group, groupData], groupIdx) => (
+                                <tr key={`${resultIdx}-${groupIdx}`} className={groupIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                                  <td className="border border-gray-300 p-2">{result.variable}</td>
+                                  <td className="border border-gray-300 p-2">{group}</td>
+                                  <td className="border border-gray-300 p-2">{groupData.normalityResult && groupData.normalityResult.test ? groupData.normalityResult.test : '-'}</td>
+                                  <td className="border border-gray-300 p-2">{groupData.normalityResult && groupData.normalityResult.statistic !== undefined ? groupData.normalityResult.statistic.toFixed(3) : '-'}</td>
+                                  <td className="border border-gray-300 p-2">{groupData.normalityResult && groupData.normalityResult.pValue !== undefined ? (groupData.normalityResult.pValue < 0.001 ? '< 0.001' : groupData.normalityResult.pValue.toFixed(3)) : '-'}</td>
+                                </tr>
+                              ))
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Функция для рендера приложения
+      function renderApp() {
+          ReactDOM.render(<StatisticalAnalyzer />, document.getElementById('root'));
+        }
+
+      // Глобальная функция для смены языка
+      window.setLang = function(lang) {
+        window.currentLang = lang;
+        renderApp(); // Перерендеринг вызовет useEffect в StatisticalAnalyzer
+        // --- Удаляем старый вызов обновления кнопок отчета ---
+        // if(window.updateReportButtonTranslations) window.updateReportButtonTranslations();
+      };
+
+       // --- Удаляем старую функцию updateReportButtonTranslations ---
+       /*
+       function updateReportButtonTranslations() {
+          const clearReportBtn = document.getElementById('clear-report-btn');
+          const exportHtmlBtn = document.getElementById('export-html-btn');
+          if(clearReportBtn && window.t) clearReportBtn.textContent = t('reportClearButton');
+          if(exportHtmlBtn && window.t) exportHtmlBtn.textContent = t('reportExportHtmlButton');
+       }
+       */
+
+      // Добавляем обработчики для кнопок отчета после загрузки DOM
+      document.addEventListener('DOMContentLoaded', () => {
+          const clearReportBtn = document.getElementById('clear-report-btn');
+          const exportHtmlBtn = document.getElementById('export-html-btn');
+
+          if (clearReportBtn && window.ReportGenerator && window.t) {
+              clearReportBtn.addEventListener('click', () => {
+                  if (confirm(t('reportClearConfirm'))) {
+                      window.ReportGenerator.clearReport();
+                      alert(t('reportClearedSuccess'));
+                  }
+              });
+          }
+
+          if (exportHtmlBtn && window.ReportGenerator && window.t) {
+              exportHtmlBtn.addEventListener('click', () => {
+                  if (window.ReportGenerator.getReport().length > 0) {
+                      window.ReportGenerator.exportToHtml();
+                  } else {
+                      alert(t('reportIsEmptyExportError'));
+                  }
+              });
+          }
+
+           // --- Удаляем старый вызов обновления кнопок при загрузке ---
+           // updateReportButtonTranslations();
+      });
+
+      // --- Обновляем обработчики событий --- 
+      document.addEventListener('DOMContentLoaded', () => {
+          console.log("Регистрация обработчиков событий для кнопок отчета");
+          const addAllBtn = document.getElementById('add-all-findings-btn');
+          const clearReportBtn = document.getElementById('clear-report-btn');
+          const generateHtmlBtn = document.getElementById('generate-html-btn'); // Используем новый ID
+          const viewReportBtn = document.getElementById('view-report-btn');
+          const closeReportViewerBtn = document.getElementById('close-report-viewer');
+          const reportViewer = document.getElementById('report-viewer');
+          const reportIframe = document.getElementById('report-iframe');
+
+          console.log("Найденные элементы:", { 
+              addAllBtn: !!addAllBtn, 
+              clearReportBtn: !!clearReportBtn, 
+              generateHtmlBtn: !!generateHtmlBtn, 
+              viewReportBtn: !!viewReportBtn,
+              reportGenerator: !!window.ReportGenerator
+          });
+
+          // Обработчик для "Добавить все находки"
+          if (addAllBtn) {
+               addAllBtn.addEventListener('click', () => {
+                   console.log("Нажата кнопка 'Добавить все находки'");
+                   if (typeof window.statix_handleAddAllFindings === 'function') {
+                       window.statix_handleAddAllFindings();
+                   } else {
+                       console.error("Add All Findings function not available.");
+                       alert("Функция добавления всех находок недоступна."); // TODO: Перевод
+                   }
+               });
+          }
+
+          // Обработчик для "Очистить отчет" (без изменений)
+          if (clearReportBtn && window.ReportGenerator && window.t) {
+              clearReportBtn.addEventListener('click', () => {
+                  console.log("Нажата кнопка 'Очистить отчет'");
+                  if (confirm(t('reportClearConfirm'))) {
+                      window.ReportGenerator.clearReport();
+                      alert(t('reportClearedSuccess'));
+                  }
+              });
+          }
+
+          // Обработчик для "Сгенерировать отчет (HTML)" (используем новый ID)
+          if (generateHtmlBtn && window.ReportGenerator && window.t) {
+              generateHtmlBtn.addEventListener('click', () => { // Используем generateHtmlBtn
+                  console.log("Нажата кнопка 'Сгенерировать отчет (HTML)'");
+                  if (window.ReportGenerator.getReport().length > 0) {
+                      window.ReportGenerator.exportToHtml();
+                  } else {
+                      alert(t('reportIsEmptyExportError'));
+                  }
+              });
+          }
+
+          // Обработчик для "Просмотреть отчет"
+          if (viewReportBtn && window.ReportGenerator && window.t) {
+              viewReportBtn.addEventListener('click', () => {
+                  console.log("Нажата кнопка 'Просмотреть отчет'");
+                  if (window.ReportGenerator.getReport().length === 0) {
+                      alert(t('reportIsEmptyExportError') || "Отчет пуст! Пожалуйста, добавьте данные в отчет перед просмотром.");
+                      return;
+                  }
+                  
+                  try {
+                      // Генерируем HTML-содержимое отчета
+                      const reportData = window.ReportGenerator.getReport();
+                      const methodsSectionText = window.ReportGenerator.generateMethodsSectionText();
+                      let htmlContent = `<!DOCTYPE html>
+<html lang="${window.currentLanguage || 'ru'}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${t('reportTitle') || "Отчет анализа данных"}</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; padding: 20px; max-width: 100%; margin: auto; }
+        h1, h2, h3 { color: #333; margin-top: 1.5em; }
+        h1 { font-size: 1.8em; border-bottom: 2px solid #eee; padding-bottom: 0.3em; }
+        h2 { font-size: 1.5em; } /* Для заголовков таблиц/рисунков */
+        h3 { font-size: 1.2em; } /* Для подзаголовков типа "Находка X" */
+        .report-item { margin-bottom: 2em; page-break-inside: avoid; }
+        .text-finding { white-space: pre-wrap; background-color: #f9f9f9; border: 1px solid #eee; padding: 10px; border-radius: 4px; }
+        .figure-container { text-align: center; margin-top: 1em; }
+        .figure-container img { max-width: 100%; height: auto; border: 1px solid #ccc; margin-bottom: 0.5em; }
+        .figure-caption { font-size: 0.9em; font-style: italic; margin-top: 0; color: #555; }
+        .table-container { margin-top: 1em; overflow-x: auto; } /* Добавляем прокрутку для широких таблиц */
+        table { width: 100%; border-collapse: collapse; margin-bottom: 0.5em; font-size: 0.9em; }
+        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+        th { background-color: #f2f2f2; font-weight: bold; }
+        tbody tr:nth-child(even) { background-color: #f9f9f9; }
+        .table-caption { font-size: 1.1em; font-weight: bold; margin-bottom: 0.5em; } /* Заголовок таблицы */
+        .table-notes { font-size: 0.8em; margin-top: 0.5em; color: #666; white-space: pre-wrap; } /* Примечания к таблице */
+        .methods-section { background-color: #f0f0f0; border: 1px solid #ccc; padding: 15px; margin-bottom: 2em; border-radius: 5px; font-size: 0.9em; white-space: pre-wrap; }
+        .methods-section h2 { margin-top: 0; font-size: 1.3em; } /* Стиль для заголовка внутри блока */
+    </style>
+</head>
+<body>
+    <h1>${t('reportMainHeader') || "Отчет статистического анализа данных"}</h1>
+
+    <div class="methods-section">
+      <h2>${t('reportMethodsTitle') || "Методы статистического анализа"}</h2>
+      ${escapeHtml(methodsSectionText)}
+    </div>
+`;
+
+                      let tableCounter = 0;
+                      reportData.forEach((item, index) => {
+                          htmlContent += `<div class="report-item">`;
+                          switch(item.type) {
+                              case 'text':
+                                  htmlContent += `<h3>${t('reportFindingsHeader') || "Находка"} ${index + 1}</h3>`;
+                                  htmlContent += `<div class="text-finding">${escapeHtml(item.content)}</div>`;
+                                  break;
+                              case 'figure':
+                                  htmlContent += `<h2>${escapeHtml(item.caption)}</h2>`;
+                                  htmlContent += `<div class="figure-container">`;
+                                  htmlContent += `<img src="${item.figureDataUrl}" alt="${escapeHtml(item.caption)}">`;
+                                  htmlContent += `</div>`;
+                                  break;
+                              case 'table':
+                                  tableCounter++;
+                                  const tableCaption = item.title || `${t('reportDefaultTableTitle') || 'Таблица'} ${tableCounter}`;
+                                  htmlContent += `<h2 class="table-caption">${escapeHtml(tableCaption)}</h2>`;
+                                  htmlContent += `<div class="table-container">`;
+                                  htmlContent += `<table>`;
+                                  // Заголовки таблицы
+                                  if (item.headers && item.headers.length > 0) {
+                                      htmlContent += `<thead><tr>`;
+                                      item.headers.forEach(header => {
+                                          htmlContent += `<th>${escapeHtml(header)}</th>`;
+                                      });
+                                      htmlContent += `</tr></thead>`;
+                                  }
+                                  // Строки таблицы
+                                  if (item.rows && item.rows.length > 0) {
+                                      htmlContent += `<tbody>`;
+                                      item.rows.forEach(row => {
+                                          htmlContent += `<tr>`;
+                                          row.forEach(cell => {
+                                              // Проверяем, является ли ячейка объектом
+                                              if (typeof cell === 'object' && cell !== null && cell.content !== undefined) {
+                                                   htmlContent += `<td ${cell.rowSpan ? `rowspan="${cell.rowSpan}"` : ''} ${cell.colSpan ? `colspan="${cell.colSpan}"` : ''} class="${cell.className || ''}">${escapeHtml(cell.content)}</td>`;
+                                              } else {
+                                                   htmlContent += `<td>${escapeHtml(cell)}</td>`;
+                                              }
+                                          });
+                                          htmlContent += `</tr>`;
+                                      });
+                                      htmlContent += `</tbody>`;
+                                  }
+                                  htmlContent += `</table>`;
+                                  // Примечания к таблице
+                                  if (item.notes) {
+                                     htmlContent += `<div class="table-notes"><strong>${t('reportNotesLabel') || 'Примечания:'}</strong>\n${escapeHtml(item.notes)}</div>`;
+                                  }
+                                  htmlContent += `</div>`;
+                                  break;
+                              default:
+                                  htmlContent += `<p><i>[${t('reportUnknownItem') || "Неизвестный элемент"}: ${escapeHtml(item.type)}]</i></p>`;
+                          }
+                          htmlContent += `</div>`;
+                      });
+
+                      htmlContent += `</body></html>`;
+
+                      // Экранирование HTML-кода, вспомогательная функция
+                      function escapeHtml(unsafe) {
+                          if (!unsafe) return '';
+                          return unsafe
+                               .replace(/&/g, "&amp;")
+                               .replace(/</g, "&lt;")
+                               .replace(/>/g, "&gt;")
+                               .replace(/"/g, "&quot;")
+                               .replace(/'/g, "&#039;");
+                      }
+
+                      // Открываем контейнер для предпросмотра
+                      reportViewer.classList.remove('hidden');
+
+                      // Заполняем iframe содержимым отчета
+                      const iframe = reportIframe;
+                      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                      iframeDoc.open();
+                      iframeDoc.write(htmlContent);
+                      iframeDoc.close();
+                      
+                      // Прокручиваем к контейнеру с отчетом
+                      reportViewer.scrollIntoView({ behavior: 'smooth' });
+
+                  } catch (error) {
+                      console.error('Ошибка при формировании отчета для просмотра:', error);
+                      alert('Ошибка при формировании отчета для просмотра: ' + error.message);
+                  }
+              });
+          }
+
+          // Обработчик для закрытия просмотрщика отчетов
+          if (closeReportViewerBtn && reportViewer) {
+              closeReportViewerBtn.addEventListener('click', () => {
+                  reportViewer.classList.add('hidden');
+              });
+          }
+      });
+
+      // Первый рендер
+      renderApp();
+
+      // Функция для добавления всех находок одним кликом
+      window.statix_handleAddAllFindings = function() {
+          if (!window.ReportGenerator || !window.t) {
+              console.error('ReportGenerator или функция перевода t() недоступны.');
+              alert('Функция отчета недоступна.');
+              return;
+          }
+          // Очищаем отчет перед добавлением
+          if (confirm(t('reportClearConfirm'))) {
+              window.ReportGenerator.clearReport();
+          }
+          const tableLabel = t('reportAddTableButton');
+          const graphLabel = t('reportAddButton');
+          // Ищем все кнопки и кликаем по нужным
+          document.querySelectorAll('button').forEach(btn => {
+              const text = btn.textContent.trim();
+              if (text === tableLabel || text === graphLabel) {
+                  btn.click();
+              }
+          });
+          alert('Все находки добавлены в отчет.');
+      };
+  };
+  </script>
+
+<script>
+  // Тестовая функция добавления находки
+  window.statix_handleAddAllFindings = function () {
+    const sampleFinding = {
+      type: 'text',
+      content: 'Пример находки: значимые различия между группами A и B по переменной X (p < 0.01).',
+      metadata: {
+        variable: 'X',
+        testType: 'ANOVA',
+        pValue: 0.008
+      }
+    };
+    if (window.ReportGenerator) {
+      window.ReportGenerator.addToReport(sampleFinding);
+      alert('Добавлена тестовая находка');
+    } else {
+      alert('ReportGenerator не инициализирован');
+    }
+  };
+</script>
+
+<!-- Скрипты в правильном порядке -->
+<script src="reportGenerator.js"></script>
+<script src="reportTester.js"></script>
+
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'932c7834d887c004',t:'MTc0NTA2NjQxNy4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
